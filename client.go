@@ -13,6 +13,18 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+var HTTP, WS string
+
+func init() {
+	if SSL {
+		HTTP = "https"
+		WS = "wss"
+	} else {
+		HTTP = "http"
+		WS = "ws"
+	}
+}
+
 type Client interface {
 	Connect() error
 	String() string
@@ -32,11 +44,11 @@ type AdminClient interface {
 }
 
 func getLoginURL() string {
-	return fmt.Sprintf(BaseURL, "http", LoginURLPath)
+	return fmt.Sprintf(BaseURL, HTTP, LoginURLPath)
 }
 
 func getWebsocketURL() string {
-	return fmt.Sprintf(BaseURL, "ws", WSURLPath)
+	return fmt.Sprintf(BaseURL, WS, WSURLPath)
 }
 
 // getSendRequest returns the request that is send by the admin clients

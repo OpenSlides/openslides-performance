@@ -13,6 +13,9 @@ const (
 	// Placeholders are filled in by the code.
 	BaseURL = "%s://localhost:8000/%s"
 
+	// SSL is a flag for the BaseURL if http or https should be used.
+	SSL = false
+
 	// LoginURLPath is the path to build the url for login. It has no leading slash.
 	LoginURLPath = "users/login/"
 
