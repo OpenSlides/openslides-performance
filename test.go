@@ -197,3 +197,40 @@ func ManyWriteTest(clients []Client) (r []TestResult) {
 
 	return []TestResult{sendedResult, receivedResult}
 }
+
+// KeepOpenTest is not a normal test. All id does is keeps the connection
+// open for all given clients forever. You have to kill the program to exit.
+func KeepOpenTest(clients []Client) (r []TestResult) {
+	log.Println("Start KeepOpenTest")
+	startTest := time.Now()
+	defer func() { log.Printf("KeepOpenTest took %dms\n", time.Since(startTest)/time.Millisecond) }()
+
+	readChan := make(chan []byte)
+	errChan := make(chan error)
+	for _, c := range clients {
+		c.SetChannels(readChan, errChan)
+		defer c.ClearChannels()
+	}
+
+	tick := time.Tick(time.Second)
+	counter := 0
+	errCounter := 0
+
+	// Listn to all channels
+	for {
+		select {
+		case <-readChan:
+			counter++
+
+		case <-errChan:
+			errCounter++
+
+		case <-tick:
+			if LogStatus {
+				log.Println(counter, errCounter)
+			}
+		}
+	}
+
+	return []TestResult{}
+}

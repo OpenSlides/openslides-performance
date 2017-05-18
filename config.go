@@ -57,7 +57,7 @@ const (
 
 	// If LogStatus is true, then the program shows some output while the tests are
 	// running
-	LogStatus = false
+	LogStatus = true
 )
 
 // List of all tests to performe
@@ -77,4 +77,9 @@ var Tests = []Test{
 	// before. This test sends one write request for each admin client and measures
 	// the time until all write requests are send and until all data is received.
 	ManyWriteTest,
+
+	// Keeps the connections open. This is not usual for a testrun of this program
+	// but can help to open a lot of connections with this tool to test manuely
+	// how OpenSlides reacts with a lot of open connections.
+	//KeepOpenTest,
 }

@@ -30,6 +30,8 @@ type Client interface {
 	String() string
 	IsAdmin() bool
 	IsConnected() bool
+	SetChannels(read chan []byte, err chan error)
+	ClearChannels()
 	ExpectData(sinceTime chan time.Duration, err chan error, count int, finish chan bool, expect uint64, since *time.Time, sinceSet chan bool)
 }
 
