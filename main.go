@@ -3,7 +3,25 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
 )
+
+var hasAborted *bool
+
+func init() {
+	abort := false
+	hasAborted = &abort
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		<-c
+		fmt.Printf("Abort")
+		abort = true
+		<-c
+		os.Exit(1)
+	}()
+}
 
 func main() {
 	var clients []Client

@@ -17,6 +17,9 @@ func RunTests(clients []Client, tests []Test) (r []TestResult) {
 	defer func() { fmt.Printf("\nAll tests took %dms\n\n", time.Since(start)/time.Millisecond) }()
 	for _, test := range tests {
 		r = append(r, test(clients)...)
+		if *hasAborted {
+			break
+		}
 	}
 	return
 }
@@ -64,7 +67,7 @@ func ConnectTest(clients []Client) (r []TestResult) {
 			}
 		}
 
-		if *connectFinished && *receivedFinished {
+		if *connectFinished && *receivedFinished || *hasAborted {
 			break
 		}
 	}
@@ -115,7 +118,7 @@ func OneWriteTest(clients []Client) (r []TestResult) {
 			}
 		}
 
-		if *finished {
+		if *finished || *hasAborted {
 			break
 		}
 	}
@@ -190,7 +193,7 @@ func ManyWriteTest(clients []Client) (r []TestResult) {
 
 		// End the test when all admins have sended there data and each client got
 		// as many responces as there are admins.
-		if *sendFinished && *receiveFinished {
+		if *sendFinished && *receiveFinished || *hasAborted {
 			break
 		}
 	}
@@ -229,6 +232,9 @@ func KeepOpenTest(clients []Client) (r []TestResult) {
 			if LogStatus {
 				log.Println(counter, errCounter)
 			}
+		}
+		if *hasAborted {
+			break
 		}
 	}
 
