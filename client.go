@@ -398,7 +398,7 @@ func sendClients(clients []AdminClient, errChan chan error, sended chan time.Dur
 		// Then set the done variable to true
 		defer func() { done = true }()
 		var wg sync.WaitGroup
-		wg.Add(len(clients))
+		wg.Add(ParallelSends)
 		defer wg.Wait()
 		toWorker := make(chan AdminClient)
 		defer close(toWorker)
