@@ -1,6 +1,6 @@
 ## OpenSlides Websocket Test
 
-Small Go program, that tests parallel websocket connections to OpenSlides.
+Go program, that tests parallel websocket connections to OpenSlides.
 
 ## Installation
 
