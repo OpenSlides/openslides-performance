@@ -17,10 +17,10 @@ const (
 	SSL = false
 
 	// LoginURLPath is the path to build the url for login. It has no leading slash.
-	LoginURLPath = "users/login/"
+	LoginURLPath = "apps/users/login/"
 
 	// WSURLPath is the path to build the websocket url. It has no leading slash.
-	WSURLPath = "ws/site/"
+	WSURLPath = "ws/?change_id=0&autoupdate=on"
 
 	// LoginPassword is the password to login the normal clients and also the admin clients.
 	LoginPassword = "password"
@@ -57,7 +57,7 @@ const (
 
 	// If LogStatus is true, then the program shows some output while the tests are
 	// running
-	LogStatus = true
+	LogStatus = false
 )
 
 // List of all tests to performe

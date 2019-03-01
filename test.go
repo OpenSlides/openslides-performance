@@ -89,16 +89,16 @@ func OneWriteTest(clients []Client) (r []TestResult) {
 		log.Fatalf("Fatal: Expect the first client in OneWriteTest to be a connected AdminClient")
 	}
 
+	// Listen to all clients to receive the response.
+	dataReceived := make(chan time.Duration)
+	errorReceived := make(chan error)
+	finished := listenToClients(clients, dataReceived, errorReceived, 1, nil, nil)
+
 	// Send the request.
 	err := admin.Send()
 	if err != nil {
 		log.Fatalf("Can not send request, %s", err)
 	}
-
-	// Listen to all clients to receive the response.
-	dataReceived := make(chan time.Duration)
-	errorReceived := make(chan error)
-	finished := listenToClients(clients, dataReceived, errorReceived, 1, nil, nil)
 
 	dataReceivedResult := TestResult{description: "Time until data is received after one write request"}
 	tick := time.Tick(time.Second)

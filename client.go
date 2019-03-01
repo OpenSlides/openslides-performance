@@ -91,7 +91,7 @@ type client struct {
 func NewAnonymousClient() *client {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
-		log.Fatalln("Can not create cookie jar, %s", err)
+		log.Fatalf("Can not create cookie jar, %s\n", err)
 	}
 	return &client{
 		waitForConnect:  make(chan bool),
@@ -260,6 +260,7 @@ func (c *client) Login() (err error) {
 		Jar: c.cookies,
 	}
 	var resp *http.Response
+
 	loginErrorCount := 0
 	for loginErrorCount < MaxLoginAttemts {
 		resp, err = httpClient.Post(
@@ -335,7 +336,7 @@ func loginClients(clients []Client) {
 			for client := range toWorker {
 				err := client.(AuthClient).Login()
 				if err != nil {
-					log.Fatalf("Can not login client %s", client)
+					log.Fatalf("Can not login client %s: %s", client, err)
 				}
 				wg.Done()
 			}
