@@ -1,4 +1,4 @@
-module github.com/ostcar/oswstest
+module github.com/openslides/openslides-performance
 
 go 1.12
 

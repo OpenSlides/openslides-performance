@@ -1,4 +1,4 @@
-package main
+package oswstest
 
 import "github.com/OneOfOne/xxhash"
 

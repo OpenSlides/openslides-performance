@@ -1,4 +1,4 @@
-package main
+package oswstest
 
 // NormalClients and AdminClients are all clients, that are logged in. For the
 // ConnectionTest there is no difference between the to clients. The AdminClient

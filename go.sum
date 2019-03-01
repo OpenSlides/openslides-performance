@@ -2,3 +2,4 @@ github.com/OneOfOne/xxhash v1.2.4 h1:HZ+j9jn/+mcsaDSQRZuK00pXWdE25AQLtgm8kZct1Ew
 github.com/OneOfOne/xxhash v1.2.4/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
 github.com/gorilla/websocket v1.4.0 h1:WDFjx/TMzVgy9VdMMQi2K2Emtwi2QcUQsztZ/zLaH/Q=
 github.com/gorilla/websocket v1.4.0/go.mod h1:E7qHFY5m1UJ88s3WnNqhKjPHQ0heANvMoAMk2YaljkQ=
+github.com/ostcar/oswstest v0.0.0-20190301145405-a028220a19d9 h1:DPA6h3/gNfZk9r8r//IIkWvgH/yQYwl3SOgwZWPmxi0=

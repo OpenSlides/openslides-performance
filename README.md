@@ -6,7 +6,7 @@ Go program, that tests parallel websocket connections to OpenSlides.
 
 You need ```go``` to install oswstest. If you have it, just call
 ```
-go get github.com/ostcar/oswstest
+go get github.com/openslides/openslides-performance/cmd/performance
 ```
 
 Afterwards, you can start the script with ```oswstest```
@@ -17,7 +17,7 @@ you should clone this repository, change the file, compile and
 run oswstest with
 
 ```
-go build && ./oswstest
+go build ./cmd/performance && ./performance
 ```
 
 ## License
