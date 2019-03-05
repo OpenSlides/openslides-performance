@@ -13,18 +13,19 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var HTTP, WS string
+var httpProtocol, wsProtocol string
 
 func init() {
 	if SSL {
-		HTTP = "https"
-		WS = "wss"
+		httpProtocol = "https"
+		wsProtocol = "wss"
 	} else {
-		HTTP = "http"
-		WS = "ws"
+		httpProtocol = "http"
+		wsProtocol = "ws"
 	}
 }
 
+// Client represents one connection to the server
 type Client interface {
 	Connect() error
 	String() string
@@ -32,25 +33,27 @@ type Client interface {
 	IsConnected() bool
 	SetChannels(read chan []byte, err chan error)
 	ClearChannels()
-	ExpectData(sinceTime chan time.Duration, err chan error, count int, finish chan bool, expect uint64, since *time.Time, sinceSet chan bool)
+	ExpectData(sinceTime chan<- time.Duration, err chan<- error, count int)
 }
 
+// AuthClient is a Client which can login to the server
 type AuthClient interface {
 	Client
 	Login() error
 }
 
+// AdminClient is a AuthClient that is an admin on the server
 type AdminClient interface {
 	AuthClient
 	Send() error
 }
 
 func getLoginURL() string {
-	return fmt.Sprintf(BaseURL, HTTP, LoginURLPath)
+	return fmt.Sprintf(BaseURL, httpProtocol, LoginURLPath)
 }
 
 func getWebsocketURL() string {
-	return fmt.Sprintf(BaseURL, WS, WSURLPath)
+	return fmt.Sprintf(BaseURL, wsProtocol, WSURLPath)
 }
 
 // getSendRequest returns the request that is send by the admin clients
@@ -78,51 +81,55 @@ type client struct {
 
 	wsRead  chan []byte
 	wsError chan error
+	wsMu    sync.Mutex
 
 	wsConnection *websocket.Conn
 	cookies      *cookiejar.Jar
 
 	connected       time.Time
-	connectionError chan bool
-	waitForConnect  chan bool
+	connectionError chan struct{}
+	waitForConnect  chan struct{}
 }
 
 // NewAnonymousClient creates an anonymous client.
-func NewAnonymousClient() *client {
+func NewAnonymousClient() Client {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		log.Fatalf("Can not create cookie jar, %s\n", err)
 	}
 	return &client{
-		waitForConnect:  make(chan bool),
-		connectionError: make(chan bool),
+		waitForConnect:  make(chan struct{}),
+		connectionError: make(chan struct{}),
 		cookies:         jar,
 	}
 }
 
 // NewUserClient creates an user client.
-func NewUserClient(username string) *client {
-	client := NewAnonymousClient()
+func NewUserClient(username string) AuthClient {
+	client := NewAnonymousClient().(*client)
 	client.username = username
 	client.isAuth = true
 	return client
 }
 
 // NewAdminClient creates an admin client.
-func NewAdminClient(username string) *client {
-	client := NewUserClient(username)
+func NewAdminClient(username string) AdminClient {
+	client := NewUserClient(username).(*client)
 	client.isAdmin = true
 	return client
 }
 
+// IsAdmin returns True, if the client is an admin client.
 func (c *client) IsAdmin() bool {
 	return c.isAdmin
 }
 
+// IsConnected returns true, if the client has an open websocket connection
 func (c *client) IsConnected() bool {
 	return !c.connected.IsZero()
 }
 
+// String returns the username of the client. `anonymous` if it is an anonymous client.
 func (c *client) String() string {
 	if !c.isAuth {
 		return "anonymous"
@@ -133,24 +140,15 @@ func (c *client) String() string {
 // Connect creates a websocket connection. It blocks until the connection is
 // established.
 func (c *client) Connect() (err error) {
-	loginErrorCount := 0
-	for loginErrorCount < MaxConnectionAttemts {
+	for i := 0; i < MaxConnectionAttemts; i++ {
 		dialer := websocket.Dialer{
 			Jar: c.cookies,
 		}
-		var r *http.Response
-		c.wsConnection, r, err = dialer.Dial(getWebsocketURL(), nil)
-		if err != nil {
-			if err == websocket.ErrBadHandshake && r.StatusCode == 503 {
-				// The channel was full. Try again later. This does not count as error.
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
-			loginErrorCount++
-			continue
+		c.wsConnection, _, err = dialer.Dial(getWebsocketURL(), nil)
+		if err == nil {
+			// if no error happend, then we can break the loop
+			break
 		}
-		// if no error happend, then we can break the loop
-		break
 	}
 	if err != nil {
 		log.Printf("Could not connect client %s, %s\n", c, err)
@@ -165,21 +163,19 @@ func (c *client) Connect() (err error) {
 
 	go func() {
 		// Write all incomming messages into c.wsRead.
-		// Before SetChannel() wist called, this channel is nil, so all messages
-		// will be dropped.
+		// Before SetChannel() is called, this channel is nil
 		defer c.wsConnection.Close()
 		for {
 			_, m, err := c.wsConnection.ReadMessage()
 			if err != nil {
 				c.wsError <- err
-				// TODO: What can happen after we break?
 				break
 			}
-			// Send the message to the channel. If no channel is set, then the message
-			// is send to /dev/null
-			// TODO: Maybe buffer the messages, so there is no problem, if a message
-			// is received before a test starts to listen?
-			c.wsRead <- m
+			// Send the message to the channel. If no channel is set, then the message ignored
+			select {
+			case c.wsRead <- m:
+			default:
+			}
 		}
 	}()
 	return nil
@@ -187,9 +183,7 @@ func (c *client) Connect() (err error) {
 
 // Set the channels to receive data.
 func (c *client) SetChannels(read chan []byte, err chan error) {
-	if c.wsRead != nil || c.wsError != nil {
-		log.Fatalf("Second call to SetChannels on client %s. Please call ClearChannels before.\n", c)
-	}
+	c.wsMu.Lock()
 	c.wsRead = read
 	c.wsError = err
 }
@@ -197,23 +191,15 @@ func (c *client) SetChannels(read chan []byte, err chan error) {
 func (c *client) ClearChannels() {
 	c.wsRead = nil
 	c.wsError = nil
+	c.wsMu.Unlock()
 }
 
-// ExpectData runs, until there are count websocket messages or one websocket error.
-// It sends the time since the the start of this function, but not before the websocket
-// connection was established. If since is nil, then the function waits until it
-// chances to something else. Therefore the sinceSet channel has to be closed.
-// If sinceChan != nil, then the time in since is used. In this case the function
-// blocks until sinceChan is closed. Make sure to set since before.
-// When count messages or one error was received, then it sends a signal
-// to the finish channel.
-// If expect it different then 0, then it checks, that the received message has the
-// same hash as expect and sends an error if not.
-func (c *client) ExpectData(sinceTime chan time.Duration, err chan error, count int, finish chan bool, expect uint64, since *time.Time, sinceSet chan bool) {
-	var start time.Time
-	defer func() { finish <- true }()
-
+// ExpectData runs, until there are `count` websocket messages or one websocket error.
+// It sends the time since the start of this function, but not before the websocket
+// connection was established.
+func (c *client) ExpectData(sinceTime chan<- time.Duration, err chan<- error, count int) {
 	// Wait until the client is connected or the connection has failed
+	var start time.Time
 	select {
 	case <-c.waitForConnect:
 		start = time.Now()
@@ -231,22 +217,13 @@ func (c *client) ExpectData(sinceTime chan time.Duration, err chan error, count 
 
 	for i := 0; i < count; i++ {
 		select {
-		case data := <-readChan:
-			if expect != 0 && expect != hashData(data) {
-				err <- fmt.Errorf("Received data has a different hash. Expected: %d, Received: %d", expect, hashData(data))
-				return
-			}
+		case <-readChan:
+			// The clients receives a message
 
 		case data := <-errChan:
 			err <- data
 			return
 		}
-	}
-	if sinceSet != nil {
-		// The since channel is set. Wait until the channel is closed and then
-		// (re-) set the start value
-		<-sinceSet
-		start = *since
 	}
 	sinceTime <- time.Since(start)
 }
@@ -255,14 +232,15 @@ func (c *client) getLoginData() string {
 	return fmt.Sprintf("{\"username\": \"%s\", \"password\": \"%s\"}", c.username, LoginPassword)
 }
 
+// Login logsin a client. This sends a login request to the server and saves
+// the session cookie for later use.
 func (c *client) Login() (err error) {
 	httpClient := &http.Client{
 		Jar: c.cookies,
 	}
 	var resp *http.Response
 
-	loginErrorCount := 0
-	for loginErrorCount < MaxLoginAttemts {
+	for i := 0; i < MaxLoginAttemts; i++ {
 		resp, err = httpClient.Post(
 			getLoginURL(),
 			"application/json",
@@ -273,11 +251,11 @@ func (c *client) Login() (err error) {
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode < 500 || resp.StatusCode >= 600 {
+		// Statu Code not between 500 and 600
+		if !(500 <= resp.StatusCode && resp.StatusCode < 600) {
 			break
 		}
-		// If the error is on the server side, then retry
-		loginErrorCount++
+		// If the error is on the server side, then retry after some time
 		time.Sleep(100 * time.Millisecond)
 	}
 
@@ -287,6 +265,8 @@ func (c *client) Login() (err error) {
 	return nil
 }
 
+// Send sends a pre defined put request to the server. Only a admin client should
+// use this method.
 func (c *client) Send() (err error) {
 	httpClient := &http.Client{
 		Jar: c.cookies,
@@ -302,7 +282,7 @@ func (c *client) Send() (err error) {
 		}
 	}
 	if CSRFToken == "" {
-		log.Fatalln("No CSRFToken in cookies")
+		log.Fatalln("No CSRF-Token in cookies")
 	}
 
 	req.Header.Set("X-CSRFToken", CSRFToken)
@@ -311,143 +291,11 @@ func (c *client) Send() (err error) {
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	// StatusCode not between 200 and 300
+	if !(200 <= resp.StatusCode && resp.StatusCode < 300) {
 		bodyBuffer, _ := ioutil.ReadAll(resp.Body)
 		fmt.Printf("%s\n", bodyBuffer)
-		return fmt.Errorf("Got an error by sending the request, status: %s", resp.Status)
+		return fmt.Errorf("got an error by sending the request, status: %s", resp.Status)
 	}
 	return nil
-}
-
-// LoginClients logs in  a slice of clients. Uses X connectWorker to work X clients in parallel.
-// Expects the clients to be AuthClients.
-// Blocks until all clients are logged in.
-func LoginClients(clients []Client) {
-	// Block the function until all clients are logged in
-	var wg sync.WaitGroup
-	wg.Add(len(clients))
-	defer wg.Wait()
-
-	// Start workers
-	toWorker := make(chan Client)
-	defer close(toWorker)
-	for i := 0; i < ParallelLogins; i++ {
-		go func() {
-			for client := range toWorker {
-				err := client.(AuthClient).Login()
-				if err != nil {
-					log.Fatalf("Can not login client %s: %s", client, err)
-				}
-				wg.Done()
-			}
-		}()
-	}
-
-	// Send clients to workers
-	for _, client := range clients {
-		toWorker <- client
-	}
-}
-
-// Connects a slice of clients. Uses X connectWorker to work X clients in parallel.
-// The return value is set to true, when all clients are connected.
-func connectClients(clients []Client, errChan chan error, connected chan time.Duration) *bool {
-	var done bool
-
-	go func() {
-		// First close the channel (to signal the workers to finish)
-		// Then wait for all workers to finish
-		// Then set the done variable to true
-		defer func() { done = true }()
-		var wg sync.WaitGroup
-		wg.Add(len(clients))
-		defer wg.Wait()
-		toWorker := make(chan Client)
-		defer close(toWorker)
-
-		// Start workers
-		for i := 0; i < ParallelConnections; i++ {
-			go func() {
-				for client := range toWorker {
-					start := time.Now()
-					err := client.Connect()
-					if err != nil {
-						errChan <- err
-					} else {
-						connected <- time.Since(start)
-					}
-					wg.Done()
-				}
-			}()
-		}
-		// Send clients to workers
-		for _, client := range clients {
-			toWorker <- client
-		}
-	}()
-	return &done
-}
-
-// Send the write request for a slice of AdminClients.
-// The return value is set to true, when all messages where send.
-func sendClients(clients []AdminClient, errChan chan error, sended chan time.Duration) *bool {
-	var done bool
-
-	go func() {
-		// First close the channel (to signal the workers to finish)
-		// Then wait for all workers to finish
-		// Then set the done variable to true
-		defer func() { done = true }()
-		var wg sync.WaitGroup
-		wg.Add(ParallelSends)
-		defer wg.Wait()
-		toWorker := make(chan AdminClient)
-		defer close(toWorker)
-
-		// Start workers
-		for i := 0; i < ParallelSends; i++ {
-			go func() {
-				for client := range toWorker {
-					start := time.Now()
-					err := client.Send()
-					if err != nil {
-						errChan <- err
-					} else {
-						sended <- time.Since(start)
-					}
-				}
-				wg.Done()
-			}()
-		}
-		// Send clients to workers
-		for _, client := range clients {
-			toWorker <- client
-		}
-	}()
-	return &done
-}
-
-// Listens to a list of clients. Sends the results
-// via the given channels. One for the data (duration since connected) and one for errors.
-// Ends the process, when each client got count messages or one errors. When this happens,
-// then the returned value is set to true.
-// This function does not block.
-func listenToClients(clients []Client, data chan time.Duration, err chan error, count int, since *time.Time, sinceSet chan bool) *bool {
-	var done bool
-
-	go func() {
-		finish := make(chan bool)
-
-		for _, client := range clients {
-			// TODO: Expected data
-			go client.ExpectData(data, err, count, finish, 0, since, sinceSet)
-		}
-
-		// Wait for all clients to send the finish signal
-		for i := 0; i < len(clients); i++ {
-			<-finish
-		}
-		done = true
-	}()
-	return &done
 }

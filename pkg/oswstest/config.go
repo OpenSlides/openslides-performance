@@ -33,21 +33,20 @@ const (
 
 	// ParallelConnections defines the number of connections, that are done in
 	// parallel. The number should be similar as the number of openslides workers.
-	ParallelConnections = 2
+	ParallelConnections = 8
 
-	// Same for logins
-	ParallelLogins = 10
+	// ParallelLogins defines the number of logins at the same time.
+	ParallelLogins = 8
 
-	// Same for sends in the ManySendTest
-	ParallelSends = 10
-)
+	// ParallelSends defines the number of admin send requests at the same time.
+	ParallelSends = 8
 
-const (
-	// If ShowAllErros is true, then all errors that happen are shoun after a result
-	// Else, only the first error is shown.
+	// ShowAllErros defines, if all errors are shown. If it is true, then all
+	// errors that happen are shown after a result. Else, only the first error is
+	// shown.
 	ShowAllErros = true
 
-	// If LogStatus is true, then the program shows some output while the tests are
-	// running
+	// LogStatus defines, if the program shows log informations while the tests
+	// are runnin.
 	LogStatus = false
 )

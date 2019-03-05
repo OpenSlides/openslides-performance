@@ -15,6 +15,7 @@ type Test func(clients []Client) (r []TestResult)
 func RunTests(clients []Client, tests []Test) (r []TestResult) {
 	start := time.Now()
 	defer func() { fmt.Printf("\nAll tests took %dms\n\n", time.Since(start)/time.Millisecond) }()
+
 	for _, test := range tests {
 		r = append(r, test(clients)...)
 		select {
@@ -26,10 +27,10 @@ func RunTests(clients []Client, tests []Test) (r []TestResult) {
 	return
 }
 
-// ConnectTest opens connections for any given client. It returns two TestResults
-// The first measures the time until the connection was open, the second measures the
-// time until the fire data was received.
-// Expects, that the wsconnection of the clients are closed.
+// ConnectTest opens connections for any given client. It returns two
+// TestResults. The first measures the time until the connection was open, the
+// second measures the time until the first data was received. Expects, that the
+// wsconnection of the clients are closed.
 func ConnectTest(clients []Client) (r []TestResult) {
 	log.Println("Start ConnectTest")
 	startTest := time.Now()
@@ -38,17 +39,21 @@ func ConnectTest(clients []Client) (r []TestResult) {
 	// Connect all Clients
 	connected := make(chan time.Duration)
 	connectedError := make(chan error)
-	connectFinished := connectClients(clients, connectedError, connected)
+	connectionDone := make(chan struct{})
+	go ConnectClients(clients, connectedError, connected, connectionDone)
 
 	// Listen to all clients to receive the response.
 	dataReceived := make(chan time.Duration)
 	errorReceived := make(chan error)
-	receivedFinished := listenToClients(clients, dataReceived, errorReceived, 1, nil, nil)
+	receivedDone := make(chan struct{})
+	go ListenToClients(clients, dataReceived, errorReceived, 1, receivedDone)
 
+	var connectFinished, receivedFinished bool
 	connectedResult := TestResult{description: "Time to established connection"}
 	dataReceivedResult := TestResult{description: "Time until data has been reveiced since the connection"}
 	tick := time.Tick(time.Second)
 
+Loop:
 	for {
 		select {
 		case value := <-connected:
@@ -67,21 +72,27 @@ func ConnectTest(clients []Client) (r []TestResult) {
 			if LogStatus {
 				log.Println(connectedResult.CountBoth(), dataReceivedResult.CountBoth())
 			}
+
 		case <-hasAborted:
-			return
+			break Loop
+
+		case <-connectionDone:
+			connectFinished = true
+
+		case <-receivedDone:
+			receivedFinished = true
 		}
 
-		if *connectFinished && *receivedFinished {
-			break
+		if connectFinished && receivedFinished {
+			break Loop
 		}
 	}
 	return []TestResult{connectedResult, dataReceivedResult}
 }
 
 // OneWriteTest tests, that all clients get a response when there is one write
-// request.
-// Expects, that the first client is a logged-in admin client and that all
-// clients have open websocket connections.
+// request. Expects, that the first client is a logged-in admin client and that
+// all clients have open websocket connections.
 func OneWriteTest(clients []Client) (r []TestResult) {
 	log.Println("Start OneWriteTest")
 	startTest := time.Now()
@@ -96,18 +107,18 @@ func OneWriteTest(clients []Client) (r []TestResult) {
 	// Listen to all clients to receive the response.
 	dataReceived := make(chan time.Duration)
 	errorReceived := make(chan error)
-	finished := listenToClients(clients, dataReceived, errorReceived, 1, nil, nil)
+	listenToClientsDone := make(chan struct{})
+	go ListenToClients(clients, dataReceived, errorReceived, 1, listenToClientsDone)
 
 	// Send the request.
-	err := admin.Send()
-	if err != nil {
+	if err := admin.Send(); err != nil {
 		log.Fatalf("Can not send request, %s", err)
 	}
 
 	dataReceivedResult := TestResult{description: "Time until data is received after one write request"}
 	tick := time.Tick(time.Second)
 
-	// Listn to all channels until the listeing is finished
+Loop:
 	for {
 		select {
 		case value := <-dataReceived:
@@ -122,28 +133,25 @@ func OneWriteTest(clients []Client) (r []TestResult) {
 			}
 
 		case <-hasAborted:
-			return
-		}
+			break Loop
 
-		if *finished {
-			break
+		case <-listenToClientsDone:
+			break Loop
 		}
 	}
 
 	return []TestResult{dataReceivedResult}
 }
 
-// ManyWriteTest tests behave like the OneWriteTest but send many write request.
-// The first clients have to be admin clients. Sends one write request for each
-// admin client.
-// Expects, that at least one client is a logged-in admin client and that all
-// clients have open websocket connections.
+// ManyWriteTest tests behave like the OneWriteTest but send one write request
+// per admin client. Expects, that at least one client is a logged-in admin
+// client and that all clients have open websocket connections.
 func ManyWriteTest(clients []Client) (r []TestResult) {
 	log.Println("Start ManyWriteTest")
 	startTest := time.Now()
 	defer func() { log.Printf("ManyWriteTest took %dms\n", time.Since(startTest)/time.Millisecond) }()
 
-	// Find all admins in the clients
+	// Find all connected admins in clients
 	var admins []AdminClient
 	for _, client := range clients {
 		admin, ok := client.(AdminClient)
@@ -158,20 +166,21 @@ func ManyWriteTest(clients []Client) (r []TestResult) {
 	// Send requests for all admin clients
 	dataSended := make(chan time.Duration)
 	errorSended := make(chan error)
-	sendFinished := sendClients(admins, errorSended, dataSended)
+	sendClientsDone := make(chan struct{})
+	go SendClients(admins, errorSended, dataSended, sendClientsDone)
 
 	// Listen for all clients to receive messages
 	dataReceived := make(chan time.Duration)
 	errorReceived := make(chan error)
-	// TODO: Use the sinceReceived or remove the API from the client.
-	// var sinceReceived time.Time
-	// sinceSet := make(chan bool)
-	receiveFinished := listenToClients(clients, dataReceived, errorReceived, len(admins), nil, nil)
+	listenToClientsDone := make(chan struct{})
+	go ListenToClients(clients, dataReceived, errorReceived, len(admins), listenToClientsDone)
 
+	var sendFinished, receiveFinished bool
 	sendedResult := TestResult{description: "Time until all requests have been sended"}
 	receivedResult := TestResult{description: "Time until all responses have been received"}
 	tick := time.Tick(time.Second)
 
+Loop:
 	for {
 		select {
 		case value := <-dataSended:
@@ -190,19 +199,20 @@ func ManyWriteTest(clients []Client) (r []TestResult) {
 			if LogStatus {
 				log.Println(sendedResult.CountBoth(), receivedResult.CountBoth())
 			}
-		case <-hasAborted:
-			return
-		}
 
-		// // Set sinceReceived when all requests are send. Close the channel
-		// if *sendFinished && sinceReceived.IsZero() {
-		// 	sinceReceived = time.Now()
-		// 	close(sinceSet)
-		// }
+		case <-hasAborted:
+			break Loop
+
+		case <-listenToClientsDone:
+			receiveFinished = true
+
+		case <-sendClientsDone:
+			sendFinished = true
+		}
 
 		// End the test when all admins have sended there data and each client got
 		// as many responces as there are admins.
-		if *sendFinished && *receiveFinished {
+		if sendFinished && receiveFinished {
 			break
 		}
 	}
@@ -228,7 +238,6 @@ func KeepOpenTest(clients []Client) (r []TestResult) {
 	counter := 0
 	errCounter := 0
 
-	// Listn to all channels
 	for {
 		select {
 		case <-readChan:
@@ -241,6 +250,7 @@ func KeepOpenTest(clients []Client) (r []TestResult) {
 			if LogStatus {
 				log.Println(counter, errCounter)
 			}
+
 		case <-hasAborted:
 			return []TestResult{}
 		}
