@@ -3,26 +3,8 @@ package oswstest
 import (
 	"fmt"
 	"log"
-	"os"
-	"os/signal"
 	"time"
 )
-
-var hasAborted *bool
-
-func init() {
-	abort := false
-	hasAborted = &abort
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	go func() {
-		<-c
-		fmt.Printf("Abort")
-		abort = true
-		<-c
-		os.Exit(1)
-	}()
-}
 
 // RunDefaultTests runs the default tests
 func RunDefaultTests() {
@@ -63,8 +45,10 @@ func RunTests(clients []Client, tests []Test) (r []TestResult) {
 	defer func() { fmt.Printf("\nAll tests took %dms\n\n", time.Since(start)/time.Millisecond) }()
 	for _, test := range tests {
 		r = append(r, test(clients)...)
-		if *hasAborted {
-			break
+		select {
+		case <-hasAborted:
+			return
+		default:
 		}
 	}
 	return
@@ -111,9 +95,11 @@ func ConnectTest(clients []Client) (r []TestResult) {
 			if LogStatus {
 				log.Println(connectedResult.CountBoth(), dataReceivedResult.CountBoth())
 			}
+		case <-hasAborted:
+			return
 		}
 
-		if *connectFinished && *receivedFinished || *hasAborted {
+		if *connectFinished && *receivedFinished {
 			break
 		}
 	}
@@ -162,9 +148,12 @@ func OneWriteTest(clients []Client) (r []TestResult) {
 			if LogStatus {
 				log.Println(dataReceivedResult.Count() + dataReceivedResult.ErrCount())
 			}
+
+		case <-hasAborted:
+			return
 		}
 
-		if *finished || *hasAborted {
+		if *finished {
 			break
 		}
 	}
@@ -229,6 +218,8 @@ func ManyWriteTest(clients []Client) (r []TestResult) {
 			if LogStatus {
 				log.Println(sendedResult.CountBoth(), receivedResult.CountBoth())
 			}
+		case <-hasAborted:
+			return
 		}
 
 		// // Set sinceReceived when all requests are send. Close the channel
@@ -239,7 +230,7 @@ func ManyWriteTest(clients []Client) (r []TestResult) {
 
 		// End the test when all admins have sended there data and each client got
 		// as many responces as there are admins.
-		if *sendFinished && *receiveFinished || *hasAborted {
+		if *sendFinished && *receiveFinished {
 			break
 		}
 	}
@@ -278,11 +269,8 @@ func KeepOpenTest(clients []Client) (r []TestResult) {
 			if LogStatus {
 				log.Println(counter, errCounter)
 			}
-		}
-		if *hasAborted {
-			break
+		case <-hasAborted:
+			return []TestResult{}
 		}
 	}
-
-	return []TestResult{}
 }
