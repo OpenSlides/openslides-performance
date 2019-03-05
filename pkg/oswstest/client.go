@@ -319,10 +319,10 @@ func (c *client) Send() (err error) {
 	return nil
 }
 
-// Login a slice of clients. Uses X connectWorker to work X clients in parallel.
+// LoginClients logs in  a slice of clients. Uses X connectWorker to work X clients in parallel.
 // Expects the clients to be AuthClients.
 // Blocks until all clients are logged in.
-func loginClients(clients []Client) {
+func LoginClients(clients []Client) {
 	// Block the function until all clients are logged in
 	var wg sync.WaitGroup
 	wg.Add(len(clients))
