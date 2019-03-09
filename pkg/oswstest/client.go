@@ -71,6 +71,7 @@ func getSendRequest(serverDomain string, useSSL bool) (r *http.Request) {
 	if err != nil {
 		log.Fatalf("Coud not build the request, %s", err)
 	}
+	r.Close = true
 	return r
 }
 
@@ -299,6 +300,7 @@ func (c *client) Send() (err error) {
 	if err != nil {
 		return err
 	}
+
 	// StatusCode not between 200 and 300
 	if !(200 <= resp.StatusCode && resp.StatusCode < 300) {
 		bodyBuffer, _ := ioutil.ReadAll(resp.Body)
