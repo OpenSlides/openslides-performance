@@ -10,14 +10,22 @@ import (
 // test results.
 type Test func(clients []Client) (r []TestResult)
 
+// testLogStatus decides, if the tests output log information. Is set in RunTests
+var testLogStatus bool
+
 // RunTests runs some tests for a slice of clients. It returns the TestResults
 // for each test.
-func RunTests(clients []Client, tests []Test) (r []TestResult) {
+func RunTests(clients []Client, tests []Test, showAllErrors bool, logStatus bool) (r []TestResult) {
+	testLogStatus = logStatus
 	start := time.Now()
 	defer func() { fmt.Printf("\nAll tests took %dms\n\n", time.Since(start)/time.Millisecond) }()
 
 	for _, test := range tests {
-		r = append(r, test(clients)...)
+		for _, result := range test(clients) {
+			result.showAllErrors = showAllErrors
+			r = append(r, result)
+		}
+
 		select {
 		case <-hasAborted:
 			return
@@ -70,7 +78,7 @@ Loop:
 			dataReceivedResult.AddError(value)
 
 		case <-ticker.C:
-			if LogStatus {
+			if testLogStatus {
 				log.Println(connectedResult.CountBoth(), dataReceivedResult.CountBoth())
 			}
 
@@ -130,7 +138,7 @@ Loop:
 			dataReceivedResult.AddError(value)
 
 		case <-ticker.C:
-			if LogStatus {
+			if testLogStatus {
 				log.Println(dataReceivedResult.Count() + dataReceivedResult.ErrCount())
 			}
 
@@ -199,7 +207,7 @@ Loop:
 			receivedResult.AddError(value)
 
 		case <-ticker.C:
-			if LogStatus {
+			if testLogStatus {
 				log.Println(sendedResult.CountBoth(), receivedResult.CountBoth())
 			}
 
@@ -252,7 +260,7 @@ func KeepOpenTest(clients []Client) (r []TestResult) {
 			errCounter++
 
 		case <-ticker.C:
-			if LogStatus {
+			if testLogStatus {
 				log.Println(counter, errCounter)
 			}
 

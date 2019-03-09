@@ -55,6 +55,8 @@ func main() {
 	oneWriteTest := flag.Bool("one-write-test", false, "Use one write test. If all tests are false, this is used.")
 	manyWriteTest := flag.Bool("many-write-test", false, "Use many write test. If all tests are false, this is used.")
 	keepOpenTest := flag.Bool("keep-open-test", false, "Use keep open test.")
+	showAllErrors := flag.Bool("all-errors", false, "Show all errors when represent the test results. In other case, only show the first error.")
+	logStatus := flag.Bool("log-status", false, "Show some output each second as long as a test runs. The output depends on the test.")
 
 	flag.Parse()
 
@@ -79,7 +81,7 @@ func main() {
 	log.Println("All Clients have logged in.")
 
 	// Run all tests and print the results
-	for _, result := range oswstest.RunTests(clients, tests) {
+	for _, result := range oswstest.RunTests(clients, tests, *showAllErrors, *logStatus) {
 		fmt.Println(result.String())
 	}
 }

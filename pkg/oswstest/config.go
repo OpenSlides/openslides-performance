@@ -30,13 +30,4 @@ const (
 
 	// ParallelSends defines the number of admin send requests at the same time.
 	ParallelSends = 8
-
-	// ShowAllErros defines, if all errors are shown. If it is true, then all
-	// errors that happen are shown after a result. Else, only the first error is
-	// shown.
-	ShowAllErros = true
-
-	// LogStatus defines, if the program shows log informations while the tests
-	// are runnin.
-	LogStatus = false
 )

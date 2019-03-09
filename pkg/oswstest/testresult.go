@@ -7,9 +7,10 @@ import (
 
 // TestResult holds the result of one test.
 type TestResult struct {
-	values      []time.Duration
-	errors      []error
-	description string
+	values        []time.Duration
+	errors        []error
+	description   string
+	showAllErrors bool
 }
 
 // Add adds one value to the testresult.
@@ -34,7 +35,7 @@ func (t *TestResult) String() string {
 	)
 	if t.ErrCount() > 0 {
 		s += fmt.Sprintf("error count: %d\n", len(t.errors))
-		if ShowAllErros {
+		if t.showAllErrors {
 			for i, err := range t.errors {
 				s += fmt.Sprintf("%3d error: %s\n", i+1, err)
 			}
