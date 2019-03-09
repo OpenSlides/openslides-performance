@@ -25,14 +25,40 @@ func init() {
 	}()
 }
 
+// selectTests returns a slice on Tests that should be run.
+// Returns the default tests (all except keep open test) when
+// non test is selected.
+func selectTests(flags []bool) []oswstest.Test {
+	allTests := []oswstest.Test{oswstest.ConnectTest, oswstest.OneWriteTest, oswstest.ManyWriteTest, oswstest.KeepOpenTest}
+	tests := make([]oswstest.Test, 0, 4)
+
+	for i, flag := range flags {
+		if flag {
+			tests = append(tests, allTests[i])
+		}
+	}
+
+	if len(tests) == 0 {
+		// If non is selected, use all except the keep open test.
+		return allTests[:3]
+	}
+	return tests
+}
+
 func main() {
 	normalClients := flag.Int("users", 10, "Number of non-admin clients to use")
 	adminClients := flag.Int("admins", 10, "Number of admin clients to use")
 	password := flag.String("password", "password", "Login password for normal and admin clients")
 	serverDomain := flag.String("server", "localhost:8000", "Domain of the OpenSlides server")
 	useSSL := flag.Bool("ssl", false, "Use ssl for http and websocket requests")
+	connectTest := flag.Bool("connect-test", false, "Use connect test. If all tests are false, this is used.")
+	oneWriteTest := flag.Bool("one-write-test", false, "Use one write test. If all tests are false, this is used.")
+	manyWriteTest := flag.Bool("many-write-test", false, "Use many write test. If all tests are false, this is used.")
+	keepOpenTest := flag.Bool("keep-open-test", false, "Use keep open test.")
 
 	flag.Parse()
+
+	tests := selectTests([]bool{*connectTest, *oneWriteTest, *manyWriteTest, *keepOpenTest})
 
 	clients := make([]oswstest.Client, 0, *normalClients+*adminClients)
 
@@ -53,7 +79,7 @@ func main() {
 	log.Println("All Clients have logged in.")
 
 	// Run all tests and print the results
-	for _, result := range oswstest.RunTests(clients, defaultTests) {
+	for _, result := range oswstest.RunTests(clients, tests) {
 		fmt.Println(result.String())
 	}
 }
