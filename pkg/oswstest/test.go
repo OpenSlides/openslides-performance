@@ -51,7 +51,8 @@ func ConnectTest(clients []Client) (r []TestResult) {
 	var connectFinished, receivedFinished bool
 	connectedResult := TestResult{description: "Time to established connection"}
 	dataReceivedResult := TestResult{description: "Time until data has been reveiced since the connection"}
-	tick := time.Tick(time.Second)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 
 Loop:
 	for {
@@ -68,7 +69,7 @@ Loop:
 		case value := <-errorReceived:
 			dataReceivedResult.AddError(value)
 
-		case <-tick:
+		case <-ticker.C:
 			if LogStatus {
 				log.Println(connectedResult.CountBoth(), dataReceivedResult.CountBoth())
 			}
@@ -116,7 +117,8 @@ func OneWriteTest(clients []Client) (r []TestResult) {
 	}
 
 	dataReceivedResult := TestResult{description: "Time until data is received after one write request"}
-	tick := time.Tick(time.Second)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 
 Loop:
 	for {
@@ -127,7 +129,7 @@ Loop:
 		case value := <-errorReceived:
 			dataReceivedResult.AddError(value)
 
-		case <-tick:
+		case <-ticker.C:
 			if LogStatus {
 				log.Println(dataReceivedResult.Count() + dataReceivedResult.ErrCount())
 			}
@@ -178,7 +180,8 @@ func ManyWriteTest(clients []Client) (r []TestResult) {
 	var sendFinished, receiveFinished bool
 	sendedResult := TestResult{description: "Time until all requests have been sended"}
 	receivedResult := TestResult{description: "Time until all responses have been received"}
-	tick := time.Tick(time.Second)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 
 Loop:
 	for {
@@ -195,7 +198,7 @@ Loop:
 		case value := <-errorReceived:
 			receivedResult.AddError(value)
 
-		case <-tick:
+		case <-ticker.C:
 			if LogStatus {
 				log.Println(sendedResult.CountBoth(), receivedResult.CountBoth())
 			}
@@ -234,7 +237,9 @@ func KeepOpenTest(clients []Client) (r []TestResult) {
 		defer c.ClearChannels()
 	}
 
-	tick := time.Tick(time.Second)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
 	counter := 0
 	errCounter := 0
 
@@ -246,7 +251,7 @@ func KeepOpenTest(clients []Client) (r []TestResult) {
 		case <-errChan:
 			errCounter++
 
-		case <-tick:
+		case <-ticker.C:
 			if LogStatus {
 				log.Println(counter, errCounter)
 			}
