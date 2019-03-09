@@ -2,16 +2,8 @@ package main
 
 import "github.com/openslides/openslides-performance/pkg/oswstest"
 
-// NormalClients and AdminClients are all clients, that are logged in. For the
-// ConnectionTest there is no difference between the to clients. The AdminClient
-// is needed to write data.
-const (
-	NormalClients = 10
-	AdminClients  = 10
-)
-
 // Tests is a list of all tests to performe
-var Tests = []oswstest.Test{
+var defaultTests = []oswstest.Test{
 	// ConnectTest connects all clients. Measures the time until all clients are
 	// connected and until they all got there first data.
 	oswstest.ConnectTest,

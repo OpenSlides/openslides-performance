@@ -4,17 +4,18 @@ Go program, that tests parallel websocket connections to OpenSlides.
 
 ## Installation
 
-You need ```go``` to install oswstest. If you have it, just call
+You need `go` to install oswstest. If you have it, just call
 ```
 go get github.com/openslides/openslides-performance/cmd/performance
 ```
 
-Afterwards, you can start the script with ```oswstest```
+Afterwards, you can start the script with `performance`
 
-Currently, the only way to configure oswstest is by changing the
-constants and variables in the file ```config.go```. Therefore
-you should clone this repository, change the file, compile and
-run oswstest with
+See `performance --help` see some configuration flags.
+
+Some other values can be configured by changing the `config.go` file in 
+`cmd/performance/` and `pwk/oswstest/`. To change them you have to clone 
+the repository, change the files, compile and run the program with
 
 ```
 go build ./cmd/performance && ./performance

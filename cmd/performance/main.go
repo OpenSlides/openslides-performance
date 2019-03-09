@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -25,18 +26,24 @@ func init() {
 }
 
 func main() {
-	var clients []oswstest.Client
+	normalClients := flag.Int("users", 10, "Number of non-admin clients to use")
+	adminClients := flag.Int("admins", 10, "Number of admin clients to use")
+	password := flag.String("password", "password", "Login password for normal and admin clients")
+	serverDomain := flag.String("server", "localhost:8000", "Domain of the OpenSlides server")
+	useSSL := flag.Bool("ssl", false, "Use ssl for http and websocket requests")
+
+	flag.Parse()
+
+	clients := make([]oswstest.Client, 0, *normalClients+*adminClients)
 
 	// Create admin clients
-	for i := 0; i < AdminClients; i++ {
-		client := oswstest.NewAdminClient(fmt.Sprintf("admin%d", i))
-		clients = append(clients, client)
+	for i := 0; i < *adminClients; i++ {
+		clients = append(clients, oswstest.NewAdminClient(*serverDomain, *useSSL, fmt.Sprintf("admin%d", i), *password))
 	}
 
 	// Create user clients
-	for i := 0; i < NormalClients; i++ {
-		client := oswstest.NewUserClient(fmt.Sprintf("user%d", i))
-		clients = append(clients, client)
+	for i := 0; i < *normalClients; i++ {
+		clients = append(clients, oswstest.NewUserClient(*serverDomain, *useSSL, fmt.Sprintf("user%d", i), *password))
 	}
 
 	fmt.Printf("Use %d clients\n", len(clients))
@@ -46,7 +53,7 @@ func main() {
 	log.Println("All Clients have logged in.")
 
 	// Run all tests and print the results
-	for _, result := range oswstest.RunTests(clients, Tests) {
+	for _, result := range oswstest.RunTests(clients, defaultTests) {
 		fmt.Println(result.String())
 	}
 }

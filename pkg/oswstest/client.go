@@ -13,18 +13,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var httpProtocol, wsProtocol string
-
-func init() {
-	if SSL {
-		httpProtocol = "https"
-		wsProtocol = "wss"
-	} else {
-		httpProtocol = "http"
-		wsProtocol = "ws"
-	}
-}
-
 // Client represents one connection to the server
 type Client interface {
 	Connect() error
@@ -48,19 +36,32 @@ type AdminClient interface {
 	Send() error
 }
 
-func getLoginURL() string {
-	return fmt.Sprintf(BaseURL, httpProtocol, LoginURLPath)
+func getLoginURL(serverDomain string, useSSL bool) string {
+	protocol := "http"
+	if useSSL == true {
+		protocol = "https"
+	}
+	return fmt.Sprintf("%s://%s/%s", protocol, serverDomain, loginURLPath)
 }
 
-func getWebsocketURL() string {
-	return fmt.Sprintf(BaseURL, wsProtocol, WSURLPath)
+func getWebsocketURL(serverDomain string, useSSL bool) string {
+	protocol := "ws"
+	if useSSL == true {
+		protocol = "wss"
+	}
+	return fmt.Sprintf("%s://%s/%s", protocol, serverDomain, wsURLPath)
 }
 
 // getSendRequest returns the request that is send by the admin clients
-func getSendRequest() (r *http.Request) {
+func getSendRequest(serverDomain string, useSSL bool) (r *http.Request) {
+	protocol := "http"
+	if useSSL == true {
+		protocol = "https"
+	}
+
 	r, err := http.NewRequest(
 		"PUT",
-		fmt.Sprintf(BaseURL, "http", "rest/agenda/item/1/"),
+		fmt.Sprintf("%s://%s/%s", protocol, serverDomain, "rest/agenda/item/1/"),
 		strings.NewReader(`
 			{"id":1,"item_number":"","title":"foo1","list_view_title":"foo1",
 			"comment":"test","closed":false,"type":1,"is_hidden":false,"duration":null,
@@ -76,6 +77,7 @@ func getSendRequest() (r *http.Request) {
 // Client represents one of many openslides users
 type client struct {
 	username string
+	password string
 	isAuth   bool
 	isAdmin  bool
 
@@ -89,10 +91,13 @@ type client struct {
 	connected       time.Time
 	connectionError chan struct{}
 	waitForConnect  chan struct{}
+
+	serverDomain string
+	useSSL       bool
 }
 
 // NewAnonymousClient creates an anonymous client.
-func NewAnonymousClient() Client {
+func NewAnonymousClient(serverDomain string, useSSL bool) Client {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		log.Fatalf("Can not create cookie jar, %s\n", err)
@@ -101,22 +106,25 @@ func NewAnonymousClient() Client {
 		waitForConnect:  make(chan struct{}),
 		connectionError: make(chan struct{}),
 		cookies:         jar,
+		serverDomain:    serverDomain,
+		useSSL:          useSSL,
 	}
 }
 
 // NewUserClient creates an user client.
-func NewUserClient(username string) AuthClient {
-	client := NewAnonymousClient().(*client)
-	client.username = username
-	client.isAuth = true
-	return client
+func NewUserClient(serverDomain string, useSSL bool, username string, password string) AuthClient {
+	c := NewAnonymousClient(serverDomain, useSSL).(*client)
+	c.username = username
+	c.password = password
+	c.isAuth = true
+	return c
 }
 
 // NewAdminClient creates an admin client.
-func NewAdminClient(username string) AdminClient {
-	client := NewUserClient(username).(*client)
-	client.isAdmin = true
-	return client
+func NewAdminClient(serverDomain string, useSSL bool, username string, password string) AdminClient {
+	c := NewUserClient(serverDomain, useSSL, username, password).(*client)
+	c.isAdmin = true
+	return c
 }
 
 // IsAdmin returns True, if the client is an admin client.
@@ -144,7 +152,7 @@ func (c *client) Connect() (err error) {
 		dialer := websocket.Dialer{
 			Jar: c.cookies,
 		}
-		c.wsConnection, _, err = dialer.Dial(getWebsocketURL(), nil)
+		c.wsConnection, _, err = dialer.Dial(getWebsocketURL(c.serverDomain, c.useSSL), nil)
 		if err == nil {
 			// if no error happend, then we can break the loop
 			break
@@ -229,7 +237,7 @@ func (c *client) ExpectData(sinceTime chan<- time.Duration, err chan<- error, co
 }
 
 func (c *client) getLoginData() string {
-	return fmt.Sprintf("{\"username\": \"%s\", \"password\": \"%s\"}", c.username, LoginPassword)
+	return fmt.Sprintf("{\"username\": \"%s\", \"password\": \"%s\"}", c.username, c.password)
 }
 
 // Login logsin a client. This sends a login request to the server and saves
@@ -242,7 +250,7 @@ func (c *client) Login() (err error) {
 
 	for i := 0; i < MaxLoginAttemts; i++ {
 		resp, err = httpClient.Post(
-			getLoginURL(),
+			getLoginURL(c.serverDomain, c.useSSL),
 			"application/json",
 			strings.NewReader(c.getLoginData()),
 		)
@@ -271,7 +279,7 @@ func (c *client) Send() (err error) {
 	httpClient := &http.Client{
 		Jar: c.cookies,
 	}
-	req := getSendRequest()
+	req := getSendRequest(c.serverDomain, c.useSSL)
 
 	// Write csrf token from cookie into the http header
 	var CSRFToken string
