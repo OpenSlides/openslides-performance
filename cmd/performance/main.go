@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/openslides/openslides-performance/pkg/oswstest"
 )
@@ -81,8 +82,9 @@ func main() {
 	for _, c := range clients {
 		authClients = append(authClients, c.(oswstest.AuthClient))
 	}
+	start := time.Now()
 	oswstest.LoginClients(authClients)
-	log.Println("All Clients have logged in.")
+	log.Printf("All Clients have logged in %dms", time.Since(start)/time.Millisecond)
 
 	// Run all tests and print the results
 	for _, result := range oswstest.RunTests(clients, tests, *showAllErrors, *logStatus) {
