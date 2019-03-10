@@ -77,7 +77,11 @@ func main() {
 	fmt.Printf("Use %d clients\n", len(clients))
 
 	// Login all clients
-	oswstest.LoginClients(clients)
+	authClients := make([]oswstest.AuthClient, 0, len(clients))
+	for _, c := range clients {
+		authClients = append(authClients, c.(oswstest.AuthClient))
+	}
+	oswstest.LoginClients(authClients)
 	log.Println("All Clients have logged in.")
 
 	// Run all tests and print the results

@@ -8,21 +8,20 @@ import (
 )
 
 // LoginClients logs in  a slice of clients. Uses `ParallelLogins` connectWorker
-// to work `ParallelLogins` clients in parallel. Expects the clients to be
-// AuthClients. Blocks until all clients are logged in.
-func LoginClients(clients []Client) {
+// to work `ParallelLogins` clients in parallel. Blocks until all clients are logged in.
+func LoginClients(clients []AuthClient) {
 	// Block the function until all clients are logged in
 	var wg sync.WaitGroup
 	wg.Add(len(clients))
 	defer wg.Wait()
 
 	// Start workers. The toWorker channel is used to send the clients to the workers
-	toWorker := make(chan Client)
+	toWorker := make(chan AuthClient)
 	defer close(toWorker)
 	for i := 0; i < ParallelLogins; i++ {
 		go func() {
 			for client := range toWorker {
-				if err := client.(AuthClient).Login(); err != nil {
+				if err := client.Login(); err != nil {
 					log.Fatalf("Can not login client %s: %s", client, err)
 				}
 				wg.Done()
