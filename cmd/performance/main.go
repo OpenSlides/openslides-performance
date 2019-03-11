@@ -28,10 +28,11 @@ func init() {
 
 // selectTests returns a slice on Tests that should be run.
 // Returns the default tests (all except keep open test) when
-// non test is selected.
-func selectTests(flags []bool) []oswstest.Test {
+// non test is selected. The second return value is true, then
+// `ConnectTest` is used.
+func selectTests(flags []bool) (tests []oswstest.Test, useConnectTest bool) {
 	allTests := []oswstest.Test{oswstest.ConnectTest, oswstest.OneWriteTest, oswstest.ManyWriteTest, oswstest.KeepOpenTest}
-	tests := make([]oswstest.Test, 0, 4)
+	tests = make([]oswstest.Test, 0, 4)
 
 	for i, flag := range flags {
 		if flag {
@@ -41,9 +42,25 @@ func selectTests(flags []bool) []oswstest.Test {
 
 	if len(tests) == 0 {
 		// If non is selected, use all except the keep open test.
-		return allTests[:3]
+		return allTests[:3], true
 	}
-	return tests
+	return tests, flags[0]
+}
+
+// connectClients connect a slice of clients in a non test way.
+func connectClients(clients []oswstest.Client) {
+	errorChan := make(chan error)
+	connected := make(chan time.Duration)
+	done := make(chan struct{})
+	go oswstest.ConnectClients(clients, errorChan, connected, done)
+	for {
+		select {
+		case <-errorChan:
+		case <-connected:
+		case <-done:
+			return
+		}
+	}
 }
 
 func main() {
@@ -61,7 +78,7 @@ func main() {
 
 	flag.Parse()
 
-	tests := selectTests([]bool{*connectTest, *oneWriteTest, *manyWriteTest, *keepOpenTest})
+	tests, useConnectTest := selectTests([]bool{*connectTest, *oneWriteTest, *manyWriteTest, *keepOpenTest})
 
 	clients := make([]oswstest.Client, 0, *normalClients+*adminClients)
 
@@ -84,7 +101,14 @@ func main() {
 	}
 	start := time.Now()
 	oswstest.LoginClients(authClients)
-	log.Printf("All Clients have logged in %dms", time.Since(start)/time.Millisecond)
+	log.Printf("All clients have logged in %dms", time.Since(start)/time.Millisecond)
+
+	// Connect clients if connect test is not used.
+	if !useConnectTest {
+		start = time.Now()
+		connectClients(clients)
+		log.Printf("All clients have been connected in %dms", time.Since(start)/time.Millisecond)
+	}
 
 	// Run all tests and print the results
 	for _, result := range oswstest.RunTests(clients, tests, *showAllErrors, *logStatus) {

@@ -231,8 +231,9 @@ Loop:
 	return []TestResult{sendedResult, receivedResult}
 }
 
-// KeepOpenTest is not a normal test. All id does is keeps the connection
+// KeepOpenTest is not a normal test. All it does is keeps the connection
 // open for all given clients forever. You have to kill the program to exit.
+// Expects the clients to be connected.
 func KeepOpenTest(clients []Client) (r []TestResult) {
 	log.Println("Start KeepOpenTest")
 	startTest := time.Now()

@@ -49,8 +49,7 @@ and until they all got there first data.
 `performance --one-write-test`
 
 Expects the first client to be an admin client and all clients
-to be connected. Therefore the test requires, that the ConnectTest is run
-before. This test sends one write request with the first client and
+to be connected. This test sends one write request with the first client and
 measures the time until all clients get the changed data.
 oswstest.OneWriteTest,
 
@@ -59,8 +58,7 @@ oswstest.OneWriteTest,
 `performance --many-write-test`
 
 Expects at least one client to be an admin client and all clients
-to be connected. Therefore the test requires, that the ConnectTest is run
-before. This test sends one write request for each admin client and
+to be connected. This test sends one write request for each admin client and
 measures the time until all write requests are send and until all data is
 received.
 
