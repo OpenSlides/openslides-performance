@@ -8,21 +8,22 @@ import (
 
 // Test is a function, that expect a slice of clients and returns a slice of
 // test results.
-type Test func(clients []Client) (r []TestResult)
+type Test func(clients []Client) []fmt.Stringer
 
 // testLogStatus decides, if the tests output log information. Is set in RunTests
 var testLogStatus bool
 
 // RunTests runs some tests for a slice of clients. It returns the TestResults
 // for each test.
-func RunTests(clients []Client, tests []Test, showAllErrors bool, logStatus bool) (r []TestResult) {
+func RunTests(clients []Client, tests []Test, showAllErrors bool, logStatus bool) (r []fmt.Stringer) {
 	testLogStatus = logStatus
 	start := time.Now()
 	defer func() { fmt.Printf("\nAll tests took %dms\n\n", time.Since(start)/time.Millisecond) }()
 
 	for _, test := range tests {
 		for _, result := range test(clients) {
-			result.showAllErrors = showAllErrors
+			// TODO
+			//result.showAllErrors = showAllErrors
 			r = append(r, result)
 		}
 
@@ -39,7 +40,7 @@ func RunTests(clients []Client, tests []Test, showAllErrors bool, logStatus bool
 // TestResults. The first measures the time until the connection was open, the
 // second measures the time until the first data was received. Expects, that the
 // wsconnection of the clients are closed.
-func ConnectTest(clients []Client) (r []TestResult) {
+func ConnectTest(clients []Client) (r []fmt.Stringer) {
 	log.Println("Start ConnectTest")
 	startTest := time.Now()
 	defer func() { log.Printf("ConnectionTest took %dms", time.Since(startTest)/time.Millisecond) }()
@@ -57,8 +58,8 @@ func ConnectTest(clients []Client) (r []TestResult) {
 	go ListenToClients(clients, dataReceived, errorReceived, 1, receivedDone)
 
 	var connectFinished, receivedFinished bool
-	connectedResult := TestResult{description: "Time to established connection"}
-	dataReceivedResult := TestResult{description: "Time until data has been reveiced since the connection"}
+	connectedResult := testResult{description: "Time to established connection"}
+	dataReceivedResult := testResult{description: "Time until data has been reveiced since the connection"}
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -66,20 +67,20 @@ Loop:
 	for {
 		select {
 		case value := <-connected:
-			connectedResult.Add(value)
+			connectedResult.add(value)
 
 		case value := <-connectedError:
-			connectedResult.AddError(value)
+			connectedResult.addError(value)
 
 		case value := <-dataReceived:
-			dataReceivedResult.Add(value)
+			dataReceivedResult.add(value)
 
 		case value := <-errorReceived:
-			dataReceivedResult.AddError(value)
+			dataReceivedResult.addError(value)
 
 		case <-ticker.C:
 			if testLogStatus {
-				log.Println(connectedResult.CountBoth(), dataReceivedResult.CountBoth())
+				log.Println(connectedResult.countBoth(), dataReceivedResult.countBoth())
 			}
 
 		case <-hasAborted:
@@ -96,13 +97,13 @@ Loop:
 			break Loop
 		}
 	}
-	return []TestResult{connectedResult, dataReceivedResult}
+	return []fmt.Stringer{&connectedResult, &dataReceivedResult}
 }
 
 // OneWriteTest tests, that all clients get a response when there is one write
 // request. Expects, that the first client is a logged-in admin client and that
 // all clients have open websocket connections.
-func OneWriteTest(clients []Client) (r []TestResult) {
+func OneWriteTest(clients []Client) (r []fmt.Stringer) {
 	log.Println("Start OneWriteTest")
 	startTest := time.Now()
 	defer func() { log.Printf("OneWriteTest took %dms\n", time.Since(startTest)/time.Millisecond) }()
@@ -124,7 +125,7 @@ func OneWriteTest(clients []Client) (r []TestResult) {
 		log.Fatalf("Can not send request, %s", err)
 	}
 
-	dataReceivedResult := TestResult{description: "Time until data is received after one write request"}
+	dataReceivedResult := testResult{description: "Time until data is received after one write request"}
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -132,14 +133,14 @@ Loop:
 	for {
 		select {
 		case value := <-dataReceived:
-			dataReceivedResult.Add(value)
+			dataReceivedResult.add(value)
 
 		case value := <-errorReceived:
-			dataReceivedResult.AddError(value)
+			dataReceivedResult.addError(value)
 
 		case <-ticker.C:
 			if testLogStatus {
-				log.Println(dataReceivedResult.Count() + dataReceivedResult.ErrCount())
+				log.Println(dataReceivedResult.count() + dataReceivedResult.errCount())
 			}
 
 		case <-hasAborted:
@@ -150,13 +151,13 @@ Loop:
 		}
 	}
 
-	return []TestResult{dataReceivedResult}
+	return []fmt.Stringer{&dataReceivedResult}
 }
 
 // ManyWriteTest tests behave like the OneWriteTest but send one write request
 // per admin client. Expects, that at least one client is a logged-in admin
 // client and that all clients have open websocket connections.
-func ManyWriteTest(clients []Client) (r []TestResult) {
+func ManyWriteTest(clients []Client) (r []fmt.Stringer) {
 	log.Println("Start ManyWriteTest")
 	startTest := time.Now()
 	defer func() { log.Printf("ManyWriteTest took %dms\n", time.Since(startTest)/time.Millisecond) }()
@@ -186,8 +187,8 @@ func ManyWriteTest(clients []Client) (r []TestResult) {
 	go ListenToClients(clients, dataReceived, errorReceived, len(admins), listenToClientsDone)
 
 	var sendFinished, receiveFinished bool
-	sendedResult := TestResult{description: "Time until all requests have been sended"}
-	receivedResult := TestResult{description: "Time until all responses have been received"}
+	sendedResult := testResult{description: "Time until all requests have been sended"}
+	receivedResult := testResult{description: "Time until all responses have been received"}
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -195,20 +196,20 @@ Loop:
 	for {
 		select {
 		case value := <-dataSended:
-			sendedResult.Add(value)
+			sendedResult.add(value)
 
 		case value := <-errorSended:
-			sendedResult.AddError(value)
+			sendedResult.addError(value)
 
 		case value := <-dataReceived:
-			receivedResult.Add(value)
+			receivedResult.add(value)
 
 		case value := <-errorReceived:
-			receivedResult.AddError(value)
+			receivedResult.addError(value)
 
 		case <-ticker.C:
 			if testLogStatus {
-				log.Println(sendedResult.CountBoth(), receivedResult.CountBoth())
+				log.Println(sendedResult.countBoth(), receivedResult.countBoth())
 			}
 
 		case <-hasAborted:
@@ -228,13 +229,13 @@ Loop:
 		}
 	}
 
-	return []TestResult{sendedResult, receivedResult}
+	return []fmt.Stringer{&sendedResult, &receivedResult}
 }
 
 // KeepOpenTest is not a normal test. All it does is keeps the connection
 // open for all given clients forever. You have to kill the program to exit.
 // Expects the clients to be connected.
-func KeepOpenTest(clients []Client) (r []TestResult) {
+func KeepOpenTest(clients []Client) (r []fmt.Stringer) {
 	log.Println("Start KeepOpenTest")
 	startTest := time.Now()
 	defer func() { log.Printf("KeepOpenTest took %dms\n", time.Since(startTest)/time.Millisecond) }()
@@ -266,7 +267,7 @@ func KeepOpenTest(clients []Client) (r []TestResult) {
 			}
 
 		case <-hasAborted:
-			return []TestResult{}
+			return []fmt.Stringer{}
 		}
 	}
 }
