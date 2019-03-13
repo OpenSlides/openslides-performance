@@ -2,37 +2,58 @@ package oswstest
 
 import (
 	"fmt"
-	"log"
 	"sync"
 	"time"
 )
 
+func clientsAction(clients []Client, duration chan<- time.Duration, errC chan<- error, parallel int, f func(Client) error) <-chan struct{} {
+	done := make(chan struct{})
+
+	go func() {
+		// Close done when all clients are done
+		defer close(done)
+
+		// Block the function until all clients are done
+		var wg sync.WaitGroup
+		wg.Add(len(clients))
+		defer wg.Wait()
+
+		// Start workers. The toWorker channel is used to send the clients to the workers
+		toWorker := make(chan Client)
+		defer close(toWorker)
+		for i := 0; i < parallel; i++ {
+			go func() {
+				for client := range toWorker {
+					start := time.Now()
+					if err := f(client); err != nil {
+						select {
+						case errC <- err:
+						default:
+						}
+					}
+					select {
+					case duration <- time.Since(start):
+					default:
+					}
+					wg.Done()
+				}
+			}()
+		}
+
+		// Send clients to workers
+		for _, client := range clients {
+			toWorker <- client
+		}
+	}()
+	return done
+}
+
 // LoginClients logs in  a slice of clients. Uses `ParallelLogins` connectWorker
 // to work `ParallelLogins` clients in parallel. Blocks until all clients are logged in.
-func LoginClients(clients []AuthClient) {
-	// Block the function until all clients are logged in
-	var wg sync.WaitGroup
-	wg.Add(len(clients))
-	defer wg.Wait()
-
-	// Start workers. The toWorker channel is used to send the clients to the workers
-	toWorker := make(chan AuthClient)
-	defer close(toWorker)
-	for i := 0; i < ParallelLogins; i++ {
-		go func() {
-			for client := range toWorker {
-				if err := client.Login(); err != nil {
-					log.Fatalf("Can not login client %s: %s", client, err)
-				}
-				wg.Done()
-			}
-		}()
-	}
-
-	// Send clients to workers
-	for _, client := range clients {
-		toWorker <- client
-	}
+func LoginClients(clients []Client, duration chan<- time.Duration, errC chan<- error) <-chan struct{} {
+	return clientsAction(clients, duration, errC, ParallelLogins, func(client Client) error {
+		return client.(AuthClient).Login()
+	})
 }
 
 // ConnectClients connects a slice of clients via websocket to the server. Uses
@@ -40,35 +61,10 @@ func LoginClients(clients []AuthClient) {
 // parallel. `errChan` sends a error, it it happens on a client. `connected`
 // sends the time how long a connection took. Sends a signal on the done
 // channel, when all clients are done.
-func ConnectClients(clients []Client, errChan chan<- error, connected chan<- time.Duration, done chan<- struct{}) {
-	defer func() { done <- struct{}{} }()
-
-	// Block the function until all clients are connected.
-	var wg sync.WaitGroup
-	wg.Add(len(clients))
-	defer wg.Wait()
-
-	// Start workers. The `toWorker` channel is used to send the clients to the workers.
-	toWorker := make(chan Client)
-	defer close(toWorker)
-	for i := 0; i < ParallelConnections; i++ {
-		go func() {
-			for client := range toWorker {
-				start := time.Now()
-				if err := client.Connect(); err != nil {
-					errChan <- fmt.Errorf("can not connect client %s: %s", client, err)
-				} else {
-					connected <- time.Since(start)
-				}
-				wg.Done()
-			}
-		}()
-	}
-
-	// Send clients to workers
-	for _, client := range clients {
-		toWorker <- client
-	}
+func ConnectClients(clients []Client, duration chan<- time.Duration, errC chan<- error) <-chan struct{} {
+	return clientsAction(clients, duration, errC, ParallelConnections, func(client Client) error {
+		return client.Connect()
+	})
 }
 
 // SendClients sends the write request for a slice of AdminClients. Sends

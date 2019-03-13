@@ -51,10 +51,9 @@ func ConnectTest(clients []Client) (r []fmt.Stringer) {
 	defer func() { log.Printf("ConnectionTest took %dms", time.Since(startTest)/time.Millisecond) }()
 
 	// Connect all Clients
-	connected := make(chan time.Duration)
-	connectedError := make(chan error)
-	connectionDone := make(chan struct{})
-	go ConnectClients(clients, connectedError, connected, connectionDone)
+	connected := make(chan time.Duration, 10)
+	connectedError := make(chan error, 10)
+	connectionDone := ConnectClients(clients, connected, connectedError)
 
 	// Listen to all clients to receive the response.
 	dataReceived := make(chan time.Duration)
@@ -93,6 +92,7 @@ Loop:
 
 		case <-connectionDone:
 			connectFinished = true
+			connectionDone = nil
 
 		case <-receivedDone:
 			receivedFinished = true

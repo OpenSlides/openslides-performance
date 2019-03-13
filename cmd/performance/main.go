@@ -47,22 +47,6 @@ func selectTests(flags []bool) (tests []oswstest.Test, useConnectTest bool) {
 	return tests, flags[0]
 }
 
-// connectClients connect a slice of clients in a non test way.
-func connectClients(clients []oswstest.Client) {
-	errorChan := make(chan error)
-	connected := make(chan time.Duration)
-	done := make(chan struct{})
-	go oswstest.ConnectClients(clients, errorChan, connected, done)
-	for {
-		select {
-		case <-errorChan:
-		case <-connected:
-		case <-done:
-			return
-		}
-	}
-}
-
 func main() {
 	normalClients := flag.Int("users", 10, "Number of non-admin clients to use")
 	adminClients := flag.Int("admins", 10, "Number of admin clients to use")
@@ -95,18 +79,14 @@ func main() {
 	fmt.Printf("Use %d clients\n", len(clients))
 
 	// Login all clients
-	authClients := make([]oswstest.AuthClient, 0, len(clients))
-	for _, c := range clients {
-		authClients = append(authClients, c.(oswstest.AuthClient))
-	}
 	start := time.Now()
-	oswstest.LoginClients(authClients)
+	<-oswstest.LoginClients(clients, nil, nil)
 	log.Printf("All clients have logged in %dms", time.Since(start)/time.Millisecond)
 
 	// Connect clients if connect test is not used.
 	if !useConnectTest {
 		start = time.Now()
-		connectClients(clients)
+		<-oswstest.ConnectClients(clients, nil, nil)
 		log.Printf("All clients have been connected in %dms", time.Since(start)/time.Millisecond)
 	}
 
