@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -18,10 +17,8 @@ type Client interface {
 	Connect() error
 	String() string
 	IsAdmin() bool
-	IsConnected() bool
-	SetChannels(read chan []byte, err chan error)
-	ClearChannels()
-	ExpectData(sinceTime chan<- time.Duration, err chan<- error, count int)
+	Connected() time.Time
+	ExpectData(count int, sinceConnect bool) error
 }
 
 // AuthClient is a Client which can login to the server
@@ -82,16 +79,17 @@ type client struct {
 	isAuth   bool
 	isAdmin  bool
 
-	wsRead  chan []byte
-	wsError chan error
-	wsMu    sync.Mutex
+	messageCount int           // Counts how many websocket messages the client received
+	wsRead       chan int      // Sents the number of the received websocket message
+	wsError      error         // Saves a websocket error if it happens
+	waitForError chan struct{} // Will be closed on error
 
 	wsConnection *websocket.Conn
 	cookies      *cookiejar.Jar
 
 	connected       time.Time
-	connectionError chan struct{}
-	waitForConnect  chan struct{}
+	connectionError chan struct{} // will be closed when an error happens on connection
+	waitForConnect  chan struct{} // will be closed when the client open connects
 
 	serverDomain string
 	useSSL       bool
@@ -105,7 +103,9 @@ func NewAnonymousClient(serverDomain string, useSSL bool) Client {
 	}
 	return &client{
 		waitForConnect:  make(chan struct{}),
+		waitForError:    make(chan struct{}),
 		connectionError: make(chan struct{}),
+		wsRead:          make(chan int),
 		cookies:         jar,
 		serverDomain:    serverDomain,
 		useSSL:          useSSL,
@@ -133,9 +133,12 @@ func (c *client) IsAdmin() bool {
 	return c.isAdmin
 }
 
-// IsConnected returns true, if the client has an open websocket connection
-func (c *client) IsConnected() bool {
-	return !c.connected.IsZero()
+// Connected returns the time since the client is connected. Returns 0 if it is not connected.
+func (c *client) Connected() time.Time {
+	if c.connected.IsZero() {
+		return time.Time{}
+	}
+	return c.connected
 }
 
 // String returns the username of the client. `anonymous` if it is an anonymous client.
@@ -162,6 +165,7 @@ func (c *client) Connect() (err error) {
 	if err != nil {
 		log.Printf("Could not connect client %s, %s\n", c, err)
 		close(c.connectionError)
+		c.wsError = err
 		return err
 	}
 
@@ -175,66 +179,49 @@ func (c *client) Connect() (err error) {
 		// Before SetChannel() is called, this channel is nil
 		defer c.wsConnection.Close()
 		for {
-			_, m, err := c.wsConnection.ReadMessage()
+			_, _, err := c.wsConnection.ReadMessage()
+			c.messageCount++
 			if err != nil {
-				c.wsError <- err
+				c.wsError = err
+				close(c.waitForError)
 				break
 			}
-			// Send the message to the channel. If no channel is set, then the message ignored
-			select {
-			case c.wsRead <- m:
-			default:
+			// Send the id of the message to the channel. If no channel is set, then the message ignored
+			if inTests {
+				c.wsRead <- c.messageCount
 			}
 		}
 	}()
 	return nil
 }
 
-// Set the channels to receive data.
-func (c *client) SetChannels(read chan []byte, err chan error) {
-	c.wsMu.Lock()
-	c.wsRead = read
-	c.wsError = err
-}
-
-func (c *client) ClearChannels() {
-	c.wsRead = nil
-	c.wsError = nil
-	c.wsMu.Unlock()
-}
-
 // ExpectData runs, until there are `count` websocket messages or one websocket error.
 // It sends the time since the start of this function, but not before the websocket
 // connection was established.
-func (c *client) ExpectData(sinceTime chan<- time.Duration, err chan<- error, count int) {
+func (c *client) ExpectData(count int, sinceConnect bool) error {
 	// Wait until the client is connected or the connection has failed
-	var start time.Time
 	select {
 	case <-c.waitForConnect:
-		start = time.Now()
 
 	case <-c.connectionError:
 		// If the connection faild, then there is nothing to do here.
-		return
+		return c.wsError
 	}
 
-	// Sets the channels to receive the data
-	readChan := make(chan []byte)
-	errChan := make(chan error)
-	c.SetChannels(readChan, errChan)
-	defer c.ClearChannels()
+	if sinceConnect {
+		count -= c.messageCount
+	}
 
 	for i := 0; i < count; i++ {
 		select {
-		case <-readChan:
+		case <-c.wsRead:
 			// The clients receives a message
 
-		case data := <-errChan:
-			err <- data
-			return
+		case <-c.waitForError:
+			return c.wsError
 		}
 	}
-	sinceTime <- time.Since(start)
+	return nil
 }
 
 func (c *client) getLoginData() string {

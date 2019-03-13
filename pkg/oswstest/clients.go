@@ -111,7 +111,7 @@ func SendClients(clients []AdminClient, errChan chan<- error, sended chan<- time
 // via the given channels. One for the data (duration since connected) and one for errors.
 // Ends the process, when each client got `count` messages or one errors. When this happens,
 // send a signal on the done channel.
-func ListenToClients(clients []Client, data chan<- time.Duration, err chan<- error, count int, done chan<- struct{}) {
+func ListenToClients(clients []Client, data chan<- time.Duration, errC chan<- error, count int, sinceStart bool, done chan<- struct{}) {
 	defer func() { done <- struct{}{} }()
 
 	// Block until all clients are done
@@ -121,7 +121,15 @@ func ListenToClients(clients []Client, data chan<- time.Duration, err chan<- err
 
 	for _, client := range clients {
 		go func(client Client) {
-			client.ExpectData(data, err, count)
+			start := time.Now()
+			if err := client.ExpectData(count, sinceStart); err != nil {
+				errC <- err
+				return
+			}
+			if start.Before(client.Connected()) {
+				start = client.Connected()
+			}
+			data <- time.Since(start)
 			wg.Done()
 		}(client)
 	}

@@ -13,9 +13,14 @@ type Test func(clients []Client) []fmt.Stringer
 // testLogStatus decides, if the tests output log information. Is set in RunTests
 var testLogStatus bool
 
+var inTests bool
+
 // RunTests runs some tests for a slice of clients. It returns the TestResults
 // for each test.
 func RunTests(clients []Client, tests []Test, showAllErrors bool, logStatus bool) (r []fmt.Stringer) {
+	inTests = true
+	defer func() { inTests = false }()
+
 	testLogStatus = logStatus
 	start := time.Now()
 	defer func() { fmt.Printf("\nAll tests took %dms\n\n", time.Since(start)/time.Millisecond) }()
@@ -55,7 +60,7 @@ func ConnectTest(clients []Client) (r []fmt.Stringer) {
 	dataReceived := make(chan time.Duration)
 	errorReceived := make(chan error)
 	receivedDone := make(chan struct{})
-	go ListenToClients(clients, dataReceived, errorReceived, 1, receivedDone)
+	go ListenToClients(clients, dataReceived, errorReceived, 1, true, receivedDone)
 
 	var connectFinished, receivedFinished bool
 	connectedResult := testResult{description: "Time to established connection"}
@@ -110,7 +115,7 @@ func OneWriteTest(clients []Client) (r []fmt.Stringer) {
 
 	// Find the admin client.
 	admin, ok := clients[0].(AdminClient)
-	if !ok || !admin.IsAdmin() || !admin.IsConnected() {
+	if !ok || !admin.IsAdmin() || (admin.Connected() == time.Time{}) {
 		log.Fatalf("Fatal: Expect the first client in OneWriteTest to be a connected AdminClient")
 	}
 
@@ -118,7 +123,7 @@ func OneWriteTest(clients []Client) (r []fmt.Stringer) {
 	dataReceived := make(chan time.Duration)
 	errorReceived := make(chan error)
 	listenToClientsDone := make(chan struct{})
-	go ListenToClients(clients, dataReceived, errorReceived, 1, listenToClientsDone)
+	go ListenToClients(clients, dataReceived, errorReceived, 1, false, listenToClientsDone)
 
 	// Send the request.
 	if err := admin.Send(); err != nil {
@@ -166,7 +171,7 @@ func ManyWriteTest(clients []Client) (r []fmt.Stringer) {
 	var admins []AdminClient
 	for _, client := range clients {
 		admin, ok := client.(AdminClient)
-		if ok && admin.IsAdmin() && admin.IsConnected() {
+		if ok && admin.IsAdmin() && admin.Connected().After(time.Time{}) {
 			admins = append(admins, admin)
 		}
 	}
@@ -184,7 +189,7 @@ func ManyWriteTest(clients []Client) (r []fmt.Stringer) {
 	dataReceived := make(chan time.Duration)
 	errorReceived := make(chan error)
 	listenToClientsDone := make(chan struct{})
-	go ListenToClients(clients, dataReceived, errorReceived, len(admins), listenToClientsDone)
+	go ListenToClients(clients, dataReceived, errorReceived, len(admins), false, listenToClientsDone)
 
 	var sendFinished, receiveFinished bool
 	sendedResult := testResult{description: "Time until all requests have been sended"}
@@ -242,10 +247,6 @@ func KeepOpenTest(clients []Client) (r []fmt.Stringer) {
 
 	readChan := make(chan []byte)
 	errChan := make(chan error)
-	for _, c := range clients {
-		c.SetChannels(readChan, errChan)
-		defer c.ClearChannels()
-	}
 
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
