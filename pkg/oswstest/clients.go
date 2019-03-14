@@ -26,14 +26,12 @@ func clientsAction(clients []Client, duration chan<- time.Duration, errC chan<- 
 				for client := range toWorker {
 					start := time.Now()
 					if err := f(client); err != nil {
-						select {
-						case errC <- err:
-						default:
+						if errC != nil {
+							errC <- err
 						}
 					}
-					select {
-					case duration <- time.Since(start):
-					default:
+					if duration != nil {
+						duration <- time.Since(start)
 					}
 					wg.Done()
 				}
@@ -117,6 +115,7 @@ func ListenToClients(clients []Client, data chan<- time.Duration, errC chan<- er
 
 	for _, client := range clients {
 		go func(client Client) {
+			defer wg.Done()
 			start := time.Now()
 			if err := client.ExpectData(count, sinceStart); err != nil {
 				errC <- err
@@ -126,7 +125,6 @@ func ListenToClients(clients []Client, data chan<- time.Duration, errC chan<- er
 				start = client.Connected()
 			}
 			data <- time.Since(start)
-			wg.Done()
 		}(client)
 	}
 }
