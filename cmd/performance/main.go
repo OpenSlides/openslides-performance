@@ -48,7 +48,7 @@ func selectTests(flags []bool) (tests []oswstest.Test, useConnectTest bool) {
 }
 
 func main() {
-	normalClients := flag.Int("users", 10, "Number of non-admin clients to use")
+	userClients := flag.Int("users", 10, "Number of non-admin clients to use")
 	adminClients := flag.Int("admins", 10, "Number of admin clients to use")
 	password := flag.String("password", "password", "Login password for normal and admin clients")
 	serverDomain := flag.String("server", "localhost:8000", "Domain of the OpenSlides server")
@@ -64,7 +64,7 @@ func main() {
 
 	tests, useConnectTest := selectTests([]bool{*connectTest, *oneWriteTest, *manyWriteTest, *keepOpenTest})
 
-	clients := make([]*oswstest.Client, 0, *normalClients+*adminClients)
+	clients := make([]*oswstest.Client, 0, *userClients+*adminClients)
 
 	// Create admin clients
 	for i := 0; i < *adminClients; i++ {
@@ -72,7 +72,7 @@ func main() {
 	}
 
 	// Create user clients
-	for i := 0; i < *normalClients; i++ {
+	for i := 0; i < *userClients; i++ {
 		clients = append(clients, oswstest.NewUserClient(*serverDomain, *useSSL, fmt.Sprintf("user%d", i), *password))
 	}
 

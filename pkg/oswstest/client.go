@@ -79,17 +79,16 @@ type Client struct {
 	isAuth   bool
 	isAdmin  bool
 
-	messageCount int           // Counts how many websocket messages the client received
-	wsRead       chan int      // Sents the number of the received websocket message
-	wsError      error         // Saves a websocket error if it happens
-	waitForError chan struct{} // Will be closed on error
+	messageCount int      // Counts how many websocket messages the client received
+	wsRead       chan int // Sents the number of the received websocket message
+	wsError      error    // Saves a websocket error if it happens
 
 	wsConnection *websocket.Conn
 	cookies      *cookiejar.Jar
 
-	connected       time.Time
-	connectionError chan struct{} // will be closed when an error happens on connection
-	waitForConnect  chan struct{} // will be closed when the client open connects
+	connected      time.Time
+	waitForError   chan struct{} // Will be closed on error
+	waitForConnect chan struct{} // will be closed when the client open connects
 
 	serverDomain string
 	useSSL       bool
@@ -102,13 +101,12 @@ func NewAnonymousClient(serverDomain string, useSSL bool) *Client {
 		log.Fatalf("Can not create cookie jar, %s\n", err)
 	}
 	return &Client{
-		waitForConnect:  make(chan struct{}),
-		waitForError:    make(chan struct{}),
-		connectionError: make(chan struct{}),
-		wsRead:          make(chan int),
-		cookies:         jar,
-		serverDomain:    serverDomain,
-		useSSL:          useSSL,
+		waitForConnect: make(chan struct{}),
+		waitForError:   make(chan struct{}),
+		wsRead:         make(chan int),
+		cookies:        jar,
+		serverDomain:   serverDomain,
+		useSSL:         useSSL,
 	}
 }
 
@@ -163,7 +161,7 @@ func (c *Client) Connect() (err error) {
 	}
 	if err != nil {
 		log.Printf("Could not connect client %s, %s\n", c, err)
-		close(c.connectionError)
+		close(c.waitForError)
 		c.wsError = err
 		return err
 	}
@@ -179,12 +177,12 @@ func (c *Client) Connect() (err error) {
 		defer c.wsConnection.Close()
 		for {
 			_, _, err := c.wsConnection.ReadMessage()
-			c.messageCount++
 			if err != nil {
 				c.wsError = err
 				close(c.waitForError)
-				break
+				return
 			}
+			c.messageCount++
 			// Send the id of the message to the channel. If no channel is set, then the message ignored
 			if inTests {
 				c.wsRead <- c.messageCount
@@ -201,7 +199,7 @@ func (c *Client) ExpectData(count int, sinceConnect bool) error {
 	// Wait until the client is connected or the connection has failed
 	select {
 	case <-c.waitForConnect:
-	case <-c.connectionError:
+	case <-c.waitForError:
 		// If the connection faild, then there is nothing to do here.
 		return c.wsError
 	}

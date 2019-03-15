@@ -283,14 +283,16 @@ func KeepOpenTest(clients []*Client) (r string) {
 
 	for _, client := range clients {
 		go func(c *Client, done <-chan struct{}) {
-			select {
-			case <-c.wsRead:
-				readChan <- struct{}{}
-			case <-c.waitForError:
-				errChan <- c.wsError
-				return
-			case <-done:
-				return
+			for {
+				select {
+				case <-c.wsRead:
+					readChan <- struct{}{}
+				case <-c.waitForError:
+					errChan <- c.wsError
+					return
+				case <-done:
+					return
+				}
 			}
 		}(client, done)
 	}
