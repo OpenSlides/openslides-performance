@@ -12,25 +12,25 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Client represents one connection to the server
-type Client interface {
-	Connect() error
-	String() string
-	IsAdmin() bool
-	Connected() time.Time
-	ExpectData(count int, sinceConnect bool) error
-}
-
-// AuthClient is a Client which can login to the server
-type AuthClient interface {
-	Client
+// Loginer is a type that can be logged in
+type Loginer interface {
 	Login() error
 }
 
-// AdminClient is a AuthClient that is an admin on the server
-type AdminClient interface {
-	AuthClient
+// Connecter is a type that can connect.
+type Connecter interface {
+	Connect() error
+}
+
+// Sender is a type that can Send something.
+type Sender interface {
 	Send() error
+}
+
+// Listener is a type that you get except to receive data.
+type Listener interface {
+	ExpectData(count int, sinceConnect bool) error
+	Connected() time.Time
 }
 
 func getLoginURL(serverDomain string, useSSL bool) string {
@@ -73,7 +73,7 @@ func getSendRequest(serverDomain string, useSSL bool) (r *http.Request) {
 }
 
 // Client represents one of many openslides users
-type client struct {
+type Client struct {
 	username string
 	password string
 	isAuth   bool
@@ -96,12 +96,12 @@ type client struct {
 }
 
 // NewAnonymousClient creates an anonymous client.
-func NewAnonymousClient(serverDomain string, useSSL bool) Client {
+func NewAnonymousClient(serverDomain string, useSSL bool) *Client {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		log.Fatalf("Can not create cookie jar, %s\n", err)
 	}
-	return &client{
+	return &Client{
 		waitForConnect:  make(chan struct{}),
 		waitForError:    make(chan struct{}),
 		connectionError: make(chan struct{}),
@@ -113,8 +113,8 @@ func NewAnonymousClient(serverDomain string, useSSL bool) Client {
 }
 
 // NewUserClient creates an user client.
-func NewUserClient(serverDomain string, useSSL bool, username string, password string) AuthClient {
-	c := NewAnonymousClient(serverDomain, useSSL).(*client)
+func NewUserClient(serverDomain string, useSSL bool, username string, password string) *Client {
+	c := NewAnonymousClient(serverDomain, useSSL)
 	c.username = username
 	c.password = password
 	c.isAuth = true
@@ -122,19 +122,19 @@ func NewUserClient(serverDomain string, useSSL bool, username string, password s
 }
 
 // NewAdminClient creates an admin client.
-func NewAdminClient(serverDomain string, useSSL bool, username string, password string) AdminClient {
-	c := NewUserClient(serverDomain, useSSL, username, password).(*client)
+func NewAdminClient(serverDomain string, useSSL bool, username string, password string) *Client {
+	c := NewUserClient(serverDomain, useSSL, username, password)
 	c.isAdmin = true
 	return c
 }
 
 // IsAdmin returns True, if the client is an admin client.
-func (c *client) IsAdmin() bool {
+func (c *Client) IsAdmin() bool {
 	return c.isAdmin
 }
 
 // Connected returns the time since the client is connected. Returns 0 if it is not connected.
-func (c *client) Connected() time.Time {
+func (c *Client) Connected() time.Time {
 	if c.connected.IsZero() {
 		return time.Time{}
 	}
@@ -142,16 +142,15 @@ func (c *client) Connected() time.Time {
 }
 
 // String returns the username of the client. `anonymous` if it is an anonymous client.
-func (c *client) String() string {
+func (c *Client) String() string {
 	if !c.isAuth {
 		return "anonymous"
 	}
 	return c.username
 }
 
-// Connect creates a websocket connection. It blocks until the connection is
-// established.
-func (c *client) Connect() (err error) {
+// Connect creates a websocket connection.
+func (c *Client) Connect() (err error) {
 	for i := 0; i < MaxConnectionAttemts; i++ {
 		dialer := websocket.Dialer{
 			Jar: c.cookies,
@@ -196,13 +195,12 @@ func (c *client) Connect() (err error) {
 }
 
 // ExpectData runs, until there are `count` websocket messages or one websocket error.
-// It sends the time since the start of this function, but not before the websocket
-// connection was established.
-func (c *client) ExpectData(count int, sinceConnect bool) error {
+// If `sinceConnect`, if starts counting at the beginning of the connection, even
+// when this function is called later
+func (c *Client) ExpectData(count int, sinceConnect bool) error {
 	// Wait until the client is connected or the connection has failed
 	select {
 	case <-c.waitForConnect:
-
 	case <-c.connectionError:
 		// If the connection faild, then there is nothing to do here.
 		return c.wsError
@@ -224,13 +222,13 @@ func (c *client) ExpectData(count int, sinceConnect bool) error {
 	return nil
 }
 
-func (c *client) getLoginData() string {
+func (c *Client) getLoginData() string {
 	return fmt.Sprintf("{\"username\": \"%s\", \"password\": \"%s\"}", c.username, c.password)
 }
 
 // Login logsin a client. This sends a login request to the server and saves
 // the session cookie for later use.
-func (c *client) Login() (err error) {
+func (c *Client) Login() (err error) {
 	httpClient := &http.Client{
 		Jar: c.cookies,
 	}
@@ -263,7 +261,7 @@ func (c *client) Login() (err error) {
 
 // Send sends a pre defined put request to the server. Only a admin client should
 // use this method.
-func (c *client) Send() (err error) {
+func (c *Client) Send() (err error) {
 	httpClient := &http.Client{
 		Jar: c.cookies,
 	}

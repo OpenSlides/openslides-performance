@@ -64,7 +64,7 @@ func main() {
 
 	tests, useConnectTest := selectTests([]bool{*connectTest, *oneWriteTest, *manyWriteTest, *keepOpenTest})
 
-	clients := make([]oswstest.Client, 0, *normalClients+*adminClients)
+	clients := make([]*oswstest.Client, 0, *normalClients+*adminClients)
 
 	// Create admin clients
 	for i := 0; i < *adminClients; i++ {
@@ -79,19 +79,27 @@ func main() {
 	fmt.Printf("Use %d clients\n", len(clients))
 
 	// Login all clients
+	loginer := make([]oswstest.Loginer, 0, len(clients))
+	for _, client := range clients {
+		loginer = append(loginer, client)
+	}
 	start := time.Now()
-	<-oswstest.LoginClients(clients, nil, nil)
+	oswstest.LoginClients(loginer, nil, nil)
 	log.Printf("All clients have logged in %dms", time.Since(start)/time.Millisecond)
 
 	// Connect clients if connect test is not used.
 	if !useConnectTest {
+		connecter := make([]oswstest.Connecter, 0, len(clients))
+		for _, client := range clients {
+			connecter = append(connecter, client)
+		}
 		start = time.Now()
-		<-oswstest.ConnectClients(clients, nil, nil)
+		oswstest.ConnectClients(connecter, nil, nil)
 		log.Printf("All clients have been connected in %dms", time.Since(start)/time.Millisecond)
 	}
 
+	start = time.Now()
 	// Run all tests and print the results
-	for _, result := range oswstest.RunTests(clients, tests, *showAllErrors, *logStatus) {
-		fmt.Println(result.String())
-	}
+	fmt.Println("\n" + oswstest.RunTests(clients, tests, *showAllErrors, *logStatus))
+	log.Printf("All tests took %dms", time.Since(start)/time.Millisecond)
 }
