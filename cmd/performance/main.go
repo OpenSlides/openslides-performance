@@ -100,6 +100,8 @@ func main() {
 
 	start = time.Now()
 	// Run all tests and print the results
-	fmt.Println("\n" + oswstest.RunTests(clients, tests, *showAllErrors, *logStatus))
+	result := oswstest.RunTests(clients, tests, *showAllErrors, *logStatus)
 	log.Printf("All tests took %dms", time.Since(start)/time.Millisecond)
+	fmt.Println()
+	fmt.Println(result)
 }
