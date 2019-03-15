@@ -29,6 +29,8 @@ func clientsAction(clients []Client, duration chan<- time.Duration, errC chan<- 
 						if errC != nil {
 							errC <- err
 						}
+						wg.Done()
+						return
 					}
 					if duration != nil {
 						duration <- time.Since(start)
