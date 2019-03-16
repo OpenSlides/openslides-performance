@@ -16,18 +16,8 @@ const (
 	// error.
 	MaxLoginAttemts = 5
 
-	// MaxConnectionAttemts is th enumber of tries for each client, to connect via
+	// MaxConnectionAttemts is the enumber of tries for each client, to connect via
 	// websocket. If a client fails, is program is not quit, but the error is shoun
 	// in the end.
 	MaxConnectionAttemts = 3
-
-	// ParallelConnections defines the number of connections, that are done in
-	// parallel. The number should be similar as the number of openslides workers.
-	ParallelConnections = 8
-
-	// ParallelLogins defines the number of logins at the same time.
-	ParallelLogins = 8
-
-	// ParallelSends defines the number of admin send requests at the same time.
-	ParallelSends = 8
 )

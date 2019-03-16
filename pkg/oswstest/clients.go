@@ -10,11 +10,16 @@ import (
 // an error happens, sends it on the `errC` channel.
 // `f()`` is a function that have to accept one work.
 // if `duration` or `errC` are nil, the values are ignored but the work is still done.
-func parallelWorker(tasks []interface{}, duration chan<- time.Duration, errC chan<- error, parallel int, f func(interface{}) error) {
+func parallelWorker(tasks []interface{}, parallel int, duration chan<- time.Duration, errC chan<- error, f func(interface{}) error) {
 	// Block the function until all tasks is done
 	var wg sync.WaitGroup
 	wg.Add(len(tasks))
 	defer wg.Wait()
+
+	// Start all tasks at once at default.
+	if parallel == 0 {
+		parallel = len(tasks)
+	}
 
 	// Start workers. The toWorker channel is used to send the tasks to the workers
 	toWorker := make(chan interface{})
@@ -44,48 +49,48 @@ func parallelWorker(tasks []interface{}, duration chan<- time.Duration, errC cha
 	}
 }
 
-// LoginClients logs in a slice of clients. Uses `ParallelLogins` nworkers
+// LoginClients logs in a slice of clients. Uses `parallel` nworkers
 // to login clients in parallel.
 // Returns the time how long each login took on the duration channel and any
 // error on the errC channel.
-func LoginClients(clients []Loginer, duration chan<- time.Duration, errC chan<- error) {
+func LoginClients(clients []Loginer, parallel int, duration chan<- time.Duration, errC chan<- error) {
 	tasks := make([]interface{}, 0, len(clients))
 	for _, task := range clients {
 		tasks = append(tasks, task)
 	}
 
-	parallelWorker(tasks, duration, errC, ParallelLogins, func(task interface{}) error {
+	parallelWorker(tasks, parallel, duration, errC, func(task interface{}) error {
 		return task.(Loginer).Login()
 	})
 }
 
 // ConnectClients connects a slice of clients via websocket to the server. Uses
-// `ParallelConnections` workers to connect clients in parallel.
+// `parallel` workers to connect clients in parallel.
 // Returns the time how long each login took on the duration channel and any
 // error on the errC channel.
-func ConnectClients(clients []Connecter, duration chan<- time.Duration, errC chan<- error) {
+func ConnectClients(clients []Connecter, parallel int, duration chan<- time.Duration, errC chan<- error) {
 	tasks := make([]interface{}, 0, len(clients))
 	for _, task := range clients {
 		tasks = append(tasks, task)
 	}
 
-	parallelWorker(tasks, duration, errC, ParallelLogins, func(task interface{}) error {
+	parallelWorker(tasks, parallel, duration, errC, func(task interface{}) error {
 		return task.(Connecter).Connect()
 	})
 }
 
 // SendClients sends the write request for a slice of clients. Sends
-// `ParallelSends` requests in parallel. `errChan` sends an error for each
+// `parallel` requests in parallel. `errChan` sends an error for each
 // client, when the send request failed. `sended` sends the time it took to send
 // the request. Sends a signal on the `done` channel when all clients send the
 // request.
-func SendClients(clients []Sender, duration chan<- time.Duration, errC chan<- error) {
+func SendClients(clients []Sender, parallel int, duration chan<- time.Duration, errC chan<- error) {
 	tasks := make([]interface{}, 0, len(clients))
 	for _, task := range clients {
 		tasks = append(tasks, task)
 	}
 
-	parallelWorker(tasks, duration, errC, ParallelSends, func(task interface{}) error {
+	parallelWorker(tasks, parallel, duration, errC, func(task interface{}) error {
 		return task.(Sender).Send()
 	})
 }

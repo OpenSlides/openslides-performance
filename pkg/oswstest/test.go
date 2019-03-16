@@ -6,24 +6,16 @@ import (
 	"time"
 )
 
-// Test is a function, that expect a slice of clients and returns a string containing
-// the test result
-type Test func(clients []*Client) string
-
 // RunTests runs some tests for a slice of clients. It returns the TestResults
 // for each test.
-func RunTests(clients []*Client, tests []Test, showAllErrors bool, logStatus bool) (r string) {
-	if logStatus {
-		defer startLogger(clients)()
-	}
-
+func RunTests(clients []*Client, tests []Tester) (r string) {
 	rs := make([]string, 0)
 	defer func() { r = strings.Join(rs, "\n") }()
 
 	for _, test := range tests {
 		// TODO
 		//result.showAllErrors = showAllErrors
-		rs = append(rs, test(clients))
+		rs = append(rs, test.Test(clients))
 
 		select {
 		case <-hasAborted:
@@ -34,11 +26,22 @@ func RunTests(clients []*Client, tests []Test, showAllErrors bool, logStatus boo
 	return
 }
 
+// Tester can be tested with a slice of clients.
+type Tester interface {
+	Test([]*Client) string
+}
+
 // ConnectTest opens connections for any given client. It returns two
 // TestResults. The first measures the time until the connection was open, the
 // second measures the time until the first data was received. Expects, that the
 // wsconnection of the clients are closed.
-func ConnectTest(clients []*Client) (r string) {
+type ConnectTest struct {
+	ShowAllErrors       bool
+	ParallelConnections int
+}
+
+// Test runs the test for the ConnectTest
+func (t *ConnectTest) Test(clients []*Client) (r string) {
 	log.Println("Start ConnectTest")
 	startTest := time.Now()
 	defer func() { log.Printf("ConnectionTest took %dms", time.Since(startTest)/time.Millisecond) }()
@@ -55,7 +58,7 @@ func ConnectTest(clients []*Client) (r string) {
 		for _, client := range clients {
 			connecters = append(connecters, client)
 		}
-		ConnectClients(connecters, connected, connectedError)
+		ConnectClients(connecters, t.ParallelConnections, connected, connectedError)
 	}()
 
 	// Listen to all clients to receive the response.
@@ -73,8 +76,8 @@ func ConnectTest(clients []*Client) (r string) {
 		ListenToClients(listeners, dataReceived, errorReceived, 1, true)
 	}()
 
-	connectedResult := testResult{description: "Time to established connection"}
-	dataReceivedResult := testResult{description: "Time until data has been reveiced since the connection"}
+	connectedResult := testResult{description: "Time to established connection", showAllErrors: t.ShowAllErrors}
+	dataReceivedResult := testResult{description: "Time until data has been reveiced since the connection", showAllErrors: t.ShowAllErrors}
 	defer func() { r = connectedResult.String() + "\n" + dataReceivedResult.String() }()
 
 	for {
@@ -110,7 +113,12 @@ func ConnectTest(clients []*Client) (r string) {
 // OneWriteTest tests, that all clients get a response when there is one write
 // request. Expects, that the first client is a logged-in admin client and that
 // all clients have open websocket connections.
-func OneWriteTest(clients []*Client) (r string) {
+type OneWriteTest struct {
+	ShowAllErrors bool
+}
+
+// Test runs the OneWriteTest
+func (t *OneWriteTest) Test(clients []*Client) (r string) {
 	log.Println("Start OneWriteTest")
 	startTest := time.Now()
 	defer func() { log.Printf("OneWriteTest took %dms\n", time.Since(startTest)/time.Millisecond) }()
@@ -141,7 +149,7 @@ func OneWriteTest(clients []*Client) (r string) {
 		log.Fatalf("Can not send request, %s", err)
 	}
 
-	dataReceivedResult := testResult{description: "Time until data is received after one write request"}
+	dataReceivedResult := testResult{description: "Time until data is received after one write request", showAllErrors: t.ShowAllErrors}
 	defer func() { r = dataReceivedResult.String() }()
 
 	for {
@@ -164,7 +172,13 @@ func OneWriteTest(clients []*Client) (r string) {
 // ManyWriteTest tests behave like the OneWriteTest but send one write request
 // per admin client. Expects, that at least one client is a logged-in admin
 // client and that all clients have open websocket connections.
-func ManyWriteTest(clients []*Client) (r string) {
+type ManyWriteTest struct {
+	ShowAllErrors bool
+	ParallelSends int
+}
+
+// Test runs the ManyWriteTest
+func (t *ManyWriteTest) Test(clients []*Client) (r string) {
 	log.Println("Start ManyWriteTest")
 	startTest := time.Now()
 	defer func() { log.Printf("ManyWriteTest took %dms\n", time.Since(startTest)/time.Millisecond) }()
@@ -172,7 +186,7 @@ func ManyWriteTest(clients []*Client) (r string) {
 	// Find all connected admins in clients
 	var admins []Sender
 	for _, client := range clients {
-		if client.IsAdmin() && client.Connected().After(time.Time{}) {
+		if client.IsAdmin() && !client.Connected().IsZero() {
 			admins = append(admins, client)
 		}
 	}
@@ -186,7 +200,7 @@ func ManyWriteTest(clients []*Client) (r string) {
 	sendClientsDone := make(chan struct{})
 	go func() {
 		defer close(sendClientsDone)
-		SendClients(admins, dataSended, errorSended)
+		SendClients(admins, t.ParallelSends, dataSended, errorSended)
 	}()
 
 	// Listen for all clients to receive messages
@@ -204,8 +218,8 @@ func ManyWriteTest(clients []*Client) (r string) {
 		ListenToClients(listeners, dataReceived, errorReceived, len(admins), false)
 	}()
 
-	sendedResult := testResult{description: "Time until all requests have been sended"}
-	receivedResult := testResult{description: "Time until all responses have been received"}
+	sendedResult := testResult{description: "Time until all requests have been sended", showAllErrors: t.ShowAllErrors}
+	receivedResult := testResult{description: "Time until all responses have been received", showAllErrors: t.ShowAllErrors}
 	defer func() { r = sendedResult.String() + "\n" + receivedResult.String() }()
 
 	for {
@@ -243,7 +257,10 @@ func ManyWriteTest(clients []*Client) (r string) {
 // KeepOpenTest is not a normal test. All it does is keeps the connection
 // open for all given clients forever. You have to kill the program to exit.
 // Expects the clients to be connected.
-func KeepOpenTest(clients []*Client) (r string) {
+type KeepOpenTest struct{}
+
+// Test runs the KeepOpenTest
+func (t *KeepOpenTest) Test(clients []*Client) (r string) {
 	log.Println("Start KeepOpenTest")
 	startTest := time.Now()
 	defer func() { log.Printf("KeepOpenTest took %dms\n", time.Since(startTest)/time.Millisecond) }()
@@ -252,16 +269,13 @@ func KeepOpenTest(clients []*Client) (r string) {
 	done := make(chan struct{})
 	defer close(done)
 
+	// Listen for all clients on the error chan to see when it closes the connection.
 	for _, client := range clients {
 		go func(c *Client, done <-chan struct{}) {
-			for {
-				select {
-				case <-c.waitForError:
-					errChan <- c.wsError
-					return
-				case <-done:
-					return
-				}
+			select {
+			case <-c.waitForError:
+				errChan <- c.wsError
+			case <-done:
 			}
 		}(client, done)
 	}
