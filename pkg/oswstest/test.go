@@ -10,14 +10,9 @@ import (
 // the test result
 type Test func(clients []*Client) string
 
-var inTests bool
-
 // RunTests runs some tests for a slice of clients. It returns the TestResults
 // for each test.
 func RunTests(clients []*Client, tests []Test, showAllErrors bool, logStatus bool) (r string) {
-	inTests = true
-	defer func() { inTests = false }()
-
 	if logStatus {
 		defer startLogger(clients)()
 	}
@@ -253,7 +248,6 @@ func KeepOpenTest(clients []*Client) (r string) {
 	startTest := time.Now()
 	defer func() { log.Printf("KeepOpenTest took %dms\n", time.Since(startTest)/time.Millisecond) }()
 
-	readChan := make(chan struct{})
 	errChan := make(chan error)
 	done := make(chan struct{})
 	defer close(done)
@@ -262,8 +256,6 @@ func KeepOpenTest(clients []*Client) (r string) {
 		go func(c *Client, done <-chan struct{}) {
 			for {
 				select {
-				case <-c.wsRead:
-					readChan <- struct{}{}
 				case <-c.waitForError:
 					errChan <- c.wsError
 					return
@@ -274,14 +266,10 @@ func KeepOpenTest(clients []*Client) (r string) {
 		}(client, done)
 	}
 
-	counter := 0
 	errCounter := 0
 
 	for {
 		select {
-		case <-readChan:
-			counter++
-
 		case <-errChan:
 			errCounter++
 			if errCounter >= len(clients) {

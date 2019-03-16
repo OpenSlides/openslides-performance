@@ -12,6 +12,11 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type condition struct {
+	count int
+	done  chan<- struct{}
+}
+
 // Loginer is a type that can be logged in
 type Loginer interface {
 	Login() error
@@ -79,9 +84,8 @@ type Client struct {
 	isAuth   bool
 	isAdmin  bool
 
-	messageCount int      // Counts how many websocket messages the client received
-	wsRead       chan int // Sents the number of the received websocket message
-	wsError      error    // Saves a websocket error if it happens
+	messageCount int   // Counts how many websocket messages the client received
+	wsError      error // Saves a websocket error if it happens
 
 	wsConnection *websocket.Conn
 	cookies      *cookiejar.Jar
@@ -92,6 +96,10 @@ type Client struct {
 
 	serverDomain string
 	useSSL       bool
+
+	// When a websocket package is received, the done channel of all structs are closed
+	// when it is the `count` message
+	expectData []condition
 }
 
 // NewAnonymousClient creates an anonymous client.
@@ -103,7 +111,6 @@ func NewAnonymousClient(serverDomain string, useSSL bool) *Client {
 	return &Client{
 		waitForConnect: make(chan struct{}),
 		waitForError:   make(chan struct{}),
-		wsRead:         make(chan int),
 		cookies:        jar,
 		serverDomain:   serverDomain,
 		useSSL:         useSSL,
@@ -182,9 +189,12 @@ func (c *Client) Connect() (err error) {
 				return
 			}
 			c.messageCount++
-			// Send the id of the message to the channel. If no channel is set, then the message ignored
-			if inTests {
-				c.wsRead <- c.messageCount
+			for i, condition := range c.expectData {
+				if c.messageCount >= condition.count {
+					close(condition.done)
+					c.expectData[i] = c.expectData[len(c.expectData)-1]
+					c.expectData = c.expectData[:len(c.expectData)-1]
+				}
 			}
 		}
 	}()
@@ -195,26 +205,18 @@ func (c *Client) Connect() (err error) {
 // If `sinceConnect`, if starts counting at the beginning of the connection, even
 // when this function is called later
 func (c *Client) ExpectData(count int, sinceConnect bool) error {
-	// Wait until the client is connected or the connection has failed
-	select {
-	case <-c.waitForConnect:
-	case <-c.waitForError:
-		// If the connection faild, then there is nothing to do here.
-		return c.wsError
-	}
-
 	if sinceConnect {
 		count -= c.messageCount
 	}
 
-	for i := 0; i < count; i++ {
-		select {
-		case <-c.wsRead:
-			// The clients receives a message
+	done := make(chan struct{})
+	c.expectData = append(c.expectData, condition{count, done})
 
-		case <-c.waitForError:
-			return c.wsError
-		}
+	// Wait until condition happens or there is an error
+	select {
+	case <-done:
+	case <-c.waitForError:
+		return c.wsError
 	}
 	return nil
 }
