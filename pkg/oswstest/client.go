@@ -133,9 +133,6 @@ func (c *Client) IsAdmin() bool {
 
 // Connected returns the time since the client is connected. Returns 0 if it is not connected.
 func (c *Client) Connected() time.Time {
-	if c.connected.IsZero() {
-		return time.Time{}
-	}
 	return c.connected
 }
 
@@ -175,6 +172,8 @@ func (c *Client) Connect() (err error) {
 		// Write all incomming messages into c.wsRead.
 		// Before SetChannel() is called, this channel is nil
 		defer c.wsConnection.Close()
+		defer func() { c.connected = time.Time{} }()
+
 		for {
 			_, _, err := c.wsConnection.ReadMessage()
 			if err != nil {

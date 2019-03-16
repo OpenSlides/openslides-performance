@@ -10,9 +10,6 @@ import (
 // the test result
 type Test func(clients []*Client) string
 
-// testLogStatus decides, if the tests output log information. Is set in RunTests
-var testLogStatus bool
-
 var inTests bool
 
 // RunTests runs some tests for a slice of clients. It returns the TestResults
@@ -21,7 +18,9 @@ func RunTests(clients []*Client, tests []Test, showAllErrors bool, logStatus boo
 	inTests = true
 	defer func() { inTests = false }()
 
-	testLogStatus = logStatus
+	if logStatus {
+		defer startLogger(clients)()
+	}
 
 	rs := make([]string, 0)
 	defer func() { r = strings.Join(rs, "\n") }()
@@ -83,9 +82,6 @@ func ConnectTest(clients []*Client) (r string) {
 	dataReceivedResult := testResult{description: "Time until data has been reveiced since the connection"}
 	defer func() { r = connectedResult.String() + "\n" + dataReceivedResult.String() }()
 
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
 	for {
 		select {
 		case value := <-connected:
@@ -99,11 +95,6 @@ func ConnectTest(clients []*Client) (r string) {
 
 		case value := <-errorReceived:
 			dataReceivedResult.addError(value)
-
-		case <-ticker.C:
-			if testLogStatus {
-				log.Println(connectedResult.countBoth(), dataReceivedResult.countBoth())
-			}
 
 		case <-hasAborted:
 			return
@@ -157,8 +148,6 @@ func OneWriteTest(clients []*Client) (r string) {
 
 	dataReceivedResult := testResult{description: "Time until data is received after one write request"}
 	defer func() { r = dataReceivedResult.String() }()
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
 
 	for {
 		select {
@@ -167,11 +156,6 @@ func OneWriteTest(clients []*Client) (r string) {
 
 		case value := <-errorReceived:
 			dataReceivedResult.addError(value)
-
-		case <-ticker.C:
-			if testLogStatus {
-				log.Println(dataReceivedResult.count() + dataReceivedResult.errCount())
-			}
 
 		case <-hasAborted:
 			return
@@ -228,8 +212,6 @@ func ManyWriteTest(clients []*Client) (r string) {
 	sendedResult := testResult{description: "Time until all requests have been sended"}
 	receivedResult := testResult{description: "Time until all responses have been received"}
 	defer func() { r = sendedResult.String() + "\n" + receivedResult.String() }()
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
 
 	for {
 		select {
@@ -244,11 +226,6 @@ func ManyWriteTest(clients []*Client) (r string) {
 
 		case value := <-errorReceived:
 			receivedResult.addError(value)
-
-		case <-ticker.C:
-			if testLogStatus {
-				log.Println(sendedResult.countBoth(), receivedResult.countBoth())
-			}
 
 		case <-hasAborted:
 			return
@@ -297,9 +274,6 @@ func KeepOpenTest(clients []*Client) (r string) {
 		}(client, done)
 	}
 
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
 	counter := 0
 	errCounter := 0
 
@@ -313,11 +287,6 @@ func KeepOpenTest(clients []*Client) (r string) {
 			if errCounter >= len(clients) {
 				// All clients have failed
 				return
-			}
-
-		case <-ticker.C:
-			if testLogStatus {
-				log.Println(counter, errCounter)
 			}
 
 		case <-hasAborted:

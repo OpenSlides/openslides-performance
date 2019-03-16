@@ -58,7 +58,7 @@ func main() {
 	manyWriteTest := flag.Bool("many-write-test", false, "Use many write test. If all tests are false, this is used.")
 	keepOpenTest := flag.Bool("keep-open-test", false, "Use keep open test.")
 	showAllErrors := flag.Bool("all-errors", false, "Show all errors when represent the test results. In other case, only show the first error.")
-	logStatus := flag.Bool("log-status", false, "Show some output each second as long as a test runs. The output depends on the test.")
+	logStatus := flag.Bool("log-status", false, "Show connected clients, received packages and errors each second.")
 
 	flag.Parse()
 
