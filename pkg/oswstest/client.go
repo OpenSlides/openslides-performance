@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -91,6 +92,7 @@ type Client struct {
 	cookies      *cookiejar.Jar
 
 	connected      time.Time
+	connectedMu    sync.RWMutex
 	waitForError   chan struct{} // Will be closed on error
 	waitForConnect chan struct{} // will be closed when the client open connects
 
@@ -99,7 +101,8 @@ type Client struct {
 
 	// When a websocket package is received, the done channel of all structs are closed
 	// when it is the `count` message
-	expectData []condition
+	expectData   []condition
+	exceptDataMu sync.RWMutex // Protects expectData and messageCount
 }
 
 // NewAnonymousClient creates an anonymous client.
@@ -140,6 +143,8 @@ func (c *Client) IsAdmin() bool {
 
 // Connected returns the time since the client is connected. Returns 0 if it is not connected.
 func (c *Client) Connected() time.Time {
+	c.connectedMu.RLock()
+	defer c.connectedMu.RUnlock()
 	return c.connected
 }
 
@@ -172,7 +177,9 @@ func (c *Client) Connect() (err error) {
 
 	// Set the connected time to now and close the waitForConnect channel to signal
 	// that the client is now connected.
+	c.connectedMu.Lock()
 	c.connected = time.Now()
+	c.connectedMu.Unlock()
 	close(c.waitForConnect)
 
 	go func() {
@@ -188,6 +195,7 @@ func (c *Client) Connect() (err error) {
 				close(c.waitForError)
 				return
 			}
+			c.exceptDataMu.Lock()
 			c.messageCount++
 			for i, condition := range c.expectData {
 				if c.messageCount >= condition.count {
@@ -196,6 +204,7 @@ func (c *Client) Connect() (err error) {
 					c.expectData = c.expectData[:len(c.expectData)-1]
 				}
 			}
+			c.exceptDataMu.Unlock()
 		}
 	}()
 	return nil
@@ -205,12 +214,14 @@ func (c *Client) Connect() (err error) {
 // If `sinceConnect`, if starts counting at the beginning of the connection, even
 // when this function is called later
 func (c *Client) ExpectData(count int, sinceConnect bool) error {
-	if sinceConnect {
-		count -= c.messageCount
+	if !sinceConnect {
+		count += c.MessageCount()
 	}
 
 	done := make(chan struct{})
+	c.exceptDataMu.Lock()
 	c.expectData = append(c.expectData, condition{count, done})
+	c.exceptDataMu.Unlock()
 
 	// Wait until condition happens or there is an error
 	select {
@@ -219,6 +230,13 @@ func (c *Client) ExpectData(count int, sinceConnect bool) error {
 		return c.wsError
 	}
 	return nil
+}
+
+// MessageCount returns the number of received messages.
+func (c *Client) MessageCount() int {
+	c.exceptDataMu.RLock()
+	defer c.exceptDataMu.RUnlock()
+	return c.messageCount
 }
 
 func (c *Client) getLoginData() string {

@@ -23,9 +23,9 @@ func StartLogger(clients []*Client) (cancel func()) {
 			case <-done:
 				return
 			}
-			connected := 0
-			received := 0
-			errors := 0
+			var connected int
+			var received int
+			var errors int
 			for _, c := range clients {
 				if !c.Connected().IsZero() {
 					connected++
@@ -33,7 +33,7 @@ func StartLogger(clients []*Client) (cancel func()) {
 				if c.wsError != nil {
 					errors++
 				}
-				received += c.messageCount
+				received += c.MessageCount()
 			}
 			log.Printf("connected: %d, received: %d, errors: %d", connected, received, errors)
 		}
