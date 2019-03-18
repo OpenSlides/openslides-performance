@@ -9,14 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/gorilla/websocket"
 )
-
-type condition struct {
-	count int
-	done  chan<- struct{}
-}
 
 // Loginer is a type that can be logged in
 type Loginer interface {
@@ -85,11 +78,12 @@ type Client struct {
 	isAuth   bool
 	isAdmin  bool
 
+	WSConnect wsConnecter
+
 	messageCount int   // Counts how many websocket messages the client received
 	wsError      error // Saves a websocket error if it happens
 
-	wsConnection *websocket.Conn
-	cookies      *cookiejar.Jar
+	cookies *cookiejar.Jar
 
 	connected      time.Time
 	connectedMu    sync.RWMutex
@@ -117,6 +111,7 @@ func NewAnonymousClient(serverDomain string, useSSL bool) *Client {
 		cookies:        jar,
 		serverDomain:   serverDomain,
 		useSSL:         useSSL,
+		WSConnect:      wsConnect{},
 	}
 }
 
@@ -156,13 +151,18 @@ func (c *Client) String() string {
 	return c.username
 }
 
+// condition is an information to a client, that the `done` channel should be closed, then
+// the client received `count` messages.
+type condition struct {
+	count int
+	done  chan<- struct{}
+}
+
 // Connect creates a websocket connection.
 func (c *Client) Connect() (err error) {
+	var wsConnection ReaderCloser
 	for i := 0; i < MaxConnectionAttemts; i++ {
-		dialer := websocket.Dialer{
-			Jar: c.cookies,
-		}
-		c.wsConnection, _, err = dialer.Dial(getWebsocketURL(c.serverDomain, c.useSSL), nil)
+		wsConnection, err = c.WSConnect.Connect(getWebsocketURL(c.serverDomain, c.useSSL), c.cookies)
 		if err == nil {
 			// if no error happend, then we can break the loop
 			break
@@ -185,11 +185,11 @@ func (c *Client) Connect() (err error) {
 	go func() {
 		// Write all incomming messages into c.wsRead.
 		// Before SetChannel() is called, this channel is nil
-		defer c.wsConnection.Close()
+		defer wsConnection.Close()
 		defer func() { c.connected = time.Time{} }()
 
 		for {
-			_, _, err := c.wsConnection.ReadMessage()
+			_, _, err := wsConnection.ReadMessage()
 			if err != nil {
 				c.wsError = err
 				close(c.waitForError)
