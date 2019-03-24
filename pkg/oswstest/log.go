@@ -7,11 +7,8 @@ import (
 
 // StartLogger starts a logger, that prints some progress informations each seconds.
 // Returns a cancel function can be called to stop the logging.
-func StartLogger(clients []*Client) (cancel func()) {
+func StartLogger(clients []*Client) func() {
 	done := make(chan struct{})
-	cancel = func() {
-		close(done)
-	}
 
 	go func() {
 		ticker := time.NewTicker(time.Second)
@@ -38,5 +35,7 @@ func StartLogger(clients []*Client) (cancel func()) {
 			log.Printf("connected: %d, received: %d, errors: %d", connected, received, errors)
 		}
 	}()
-	return
+	return func() {
+		close(done)
+	}
 }

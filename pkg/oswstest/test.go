@@ -8,17 +8,15 @@ import (
 
 // RunTests runs some tests for a slice of clients. It returns the TestResults
 // for each test.
-func RunTests(clients []*Client, tests []Tester) (r string) {
+func RunTests(clients []*Client, tests []Tester, cancel <-chan struct{}) (r string) {
 	rs := make([]string, 0)
 	defer func() { r = strings.Join(rs, "\n") }()
 
 	for _, test := range tests {
-		// TODO
-		//result.showAllErrors = showAllErrors
-		rs = append(rs, test.Test(clients))
+		rs = append(rs, test.Test(clients, cancel))
 
 		select {
-		case <-hasAborted:
+		case <-cancel:
 			return
 		default:
 		}
@@ -28,7 +26,7 @@ func RunTests(clients []*Client, tests []Tester) (r string) {
 
 // Tester can be tested with a slice of clients.
 type Tester interface {
-	Test([]*Client) string
+	Test([]*Client, <-chan struct{}) string
 }
 
 // ConnectTest opens connections for any given client. It returns two
@@ -41,7 +39,7 @@ type ConnectTest struct {
 }
 
 // Test runs the test for the ConnectTest
-func (t *ConnectTest) Test(clients []*Client) (r string) {
+func (t *ConnectTest) Test(clients []*Client, cancel <-chan struct{}) (r string) {
 	log.Println("Start ConnectTest")
 	startTest := time.Now()
 	defer func() { log.Printf("ConnectionTest took %dms", time.Since(startTest)/time.Millisecond) }()
@@ -94,7 +92,7 @@ func (t *ConnectTest) Test(clients []*Client) (r string) {
 		case value := <-errorReceived:
 			dataReceivedResult.addError(value)
 
-		case <-hasAborted:
+		case <-cancel:
 			return
 
 		case <-connectionDone:
@@ -118,7 +116,7 @@ type OneWriteTest struct {
 }
 
 // Test runs the OneWriteTest
-func (t *OneWriteTest) Test(clients []*Client) (r string) {
+func (t *OneWriteTest) Test(clients []*Client, cancel <-chan struct{}) (r string) {
 	log.Println("Start OneWriteTest")
 	startTest := time.Now()
 	defer func() { log.Printf("OneWriteTest took %dms\n", time.Since(startTest)/time.Millisecond) }()
@@ -160,7 +158,7 @@ func (t *OneWriteTest) Test(clients []*Client) (r string) {
 		case value := <-errorReceived:
 			dataReceivedResult.addError(value)
 
-		case <-hasAborted:
+		case <-cancel:
 			return
 
 		case <-listenToClientsDone:
@@ -178,7 +176,7 @@ type ManyWriteTest struct {
 }
 
 // Test runs the ManyWriteTest
-func (t *ManyWriteTest) Test(clients []*Client) (r string) {
+func (t *ManyWriteTest) Test(clients []*Client, cancel <-chan struct{}) (r string) {
 	log.Println("Start ManyWriteTest")
 	startTest := time.Now()
 	defer func() { log.Printf("ManyWriteTest took %dms\n", time.Since(startTest)/time.Millisecond) }()
@@ -236,7 +234,7 @@ func (t *ManyWriteTest) Test(clients []*Client) (r string) {
 		case value := <-errorReceived:
 			receivedResult.addError(value)
 
-		case <-hasAborted:
+		case <-cancel:
 			return
 
 		case <-listenToClientsDone:
@@ -247,7 +245,7 @@ func (t *ManyWriteTest) Test(clients []*Client) (r string) {
 		}
 
 		// End the test when all admins have sended there data and each client got
-		// as many responces as there are admins.
+		// as many response as there are admins.
 		if listenToClientsDone == nil && sendClientsDone == nil {
 			return
 		}
@@ -260,7 +258,7 @@ func (t *ManyWriteTest) Test(clients []*Client) (r string) {
 type KeepOpenTest struct{}
 
 // Test runs the KeepOpenTest
-func (t *KeepOpenTest) Test(clients []*Client) (r string) {
+func (t *KeepOpenTest) Test(clients []*Client, cancel <-chan struct{}) (r string) {
 	log.Println("Start KeepOpenTest")
 	startTest := time.Now()
 	defer func() { log.Printf("KeepOpenTest took %dms\n", time.Since(startTest)/time.Millisecond) }()
@@ -291,7 +289,7 @@ func (t *KeepOpenTest) Test(clients []*Client) (r string) {
 				return
 			}
 
-		case <-hasAborted:
+		case <-cancel:
 			return
 		}
 	}

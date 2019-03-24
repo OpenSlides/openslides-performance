@@ -10,7 +10,6 @@ import (
 
 type fakeWSConnect struct {
 	connected bool
-	err       error
 	rc        *fakeReaderCloser
 }
 
@@ -104,10 +103,14 @@ func TestClientConnectExpectData(t *testing.T) {
 	connection := &fakeWSConnect{}
 	c.WSConnect = connection
 
-	c.Connect()
+	if err := c.Connect(); err != nil {
+		t.Errorf("Connect failed: %v", err)
+	}
 	defer connection.rc.nextMessage(nil, fmt.Errorf("close"))
 
 	connection.rc.nextMessage([]byte("some message"), nil)
 	// wait until there is at least one message
-	c.ExpectData(1, false)
+	if err := c.ExpectData(1, false); err != nil {
+		t.Errorf("ExpectData failed: %v", err)
+	}
 }

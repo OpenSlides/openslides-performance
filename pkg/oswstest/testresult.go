@@ -56,11 +56,6 @@ func (t *testResult) errCount() int {
 	return len(t.errors)
 }
 
-// countBoth returns the number of values and errors i nthe testresult.
-func (t *testResult) countBoth() int {
-	return t.count() + t.errCount()
-}
-
 func (t *testResult) min() (m time.Duration) {
 	for i, v := range t.values {
 		if i == 0 {

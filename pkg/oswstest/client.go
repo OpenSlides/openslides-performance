@@ -34,7 +34,7 @@ type Listener interface {
 
 func getLoginURL(serverDomain string, useSSL bool) string {
 	protocol := "http"
-	if useSSL == true {
+	if useSSL {
 		protocol = "https"
 	}
 	return fmt.Sprintf("%s://%s/%s", protocol, serverDomain, loginURLPath)
@@ -42,7 +42,7 @@ func getLoginURL(serverDomain string, useSSL bool) string {
 
 func getWebsocketURL(serverDomain string, useSSL bool) string {
 	protocol := "ws"
-	if useSSL == true {
+	if useSSL {
 		protocol = "wss"
 	}
 	return fmt.Sprintf("%s://%s/%s", protocol, serverDomain, wsURLPath)
@@ -51,7 +51,7 @@ func getWebsocketURL(serverDomain string, useSSL bool) string {
 // getSendRequest returns the request that is send by the admin clients
 func getSendRequest(serverDomain string, useSSL bool) (r *http.Request) {
 	protocol := "http"
-	if useSSL == true {
+	if useSSL {
 		protocol = "https"
 	}
 
@@ -164,7 +164,7 @@ func (c *Client) Connect() (err error) {
 	for i := 0; i < MaxConnectionAttemts; i++ {
 		wsConnection, err = c.WSConnect.Connect(getWebsocketURL(c.serverDomain, c.useSSL), c.cookies)
 		if err == nil {
-			// if no error happend, then we can break the loop
+			// if no error happened, then we can break the loop
 			break
 		}
 	}

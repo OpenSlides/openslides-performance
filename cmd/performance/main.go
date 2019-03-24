@@ -12,18 +12,20 @@ import (
 )
 
 // Aborts the program when strg+c is hit. Hart closes it at a second strg+c
-func init() {
+func listenAbort() <-chan struct{} {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
+	cancel := make(chan struct{})
 	go func() {
 		// strg+c is send once
 		<-c
 		log.Printf("Abort")
-		oswstest.Abort()
+		close(cancel)
 		// strg+c is send a second time
 		<-c
 		os.Exit(1)
 	}()
+	return cancel
 }
 
 // selectTests returns a slice on Tests that should be run.
@@ -125,7 +127,7 @@ func main() {
 
 	start = time.Now()
 	// Run all tests and print the results
-	result := oswstest.RunTests(clients, tests)
+	result := oswstest.RunTests(clients, tests, listenAbort())
 	log.Printf("All tests took %dms", time.Since(start)/time.Millisecond)
 	fmt.Println()
 	fmt.Println(result)
