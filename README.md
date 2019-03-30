@@ -19,16 +19,17 @@ See `performance --help` see some configuration flags.
 Example:
 
 ```
-performance --admins 100 --users 100 --connect-test --keep-open-test
+performance --anonymous 100 --admins 100 --users 100 --connect-test --keep-open-test
 ```
 
-This will start the tests with 100 admin users and 100 non-admin users.
-It will first connect all 200 clients and keep the connection open
+This will start the tests with 100 anonymous users, 100 admin users and 100 non-admin users.
+It will first connect all 300 clients and keep the connection open
 afterwards
 
-Some other values can be configured by changing the `config.go` file in
-`pwk/oswstest/`. To change them you have to clone the repository, change
-the files, compile and run the program with
+
+## Build from source
+
+To change the software, you have to clone the repository and run:
 
 ```
 go build ./cmd/performance && ./performance

@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/openslides/openslides-performance/pkg/oswstest"
@@ -55,9 +56,13 @@ func selectTests(flags []bool, showAllErrors bool, parallelConnections int, para
 }
 
 func main() {
+	anonymousClients := flag.Int("anonymous", 0, "Number of anonymous clients to use")
 	userClients := flag.Int("users", 10, "Number of non-admin clients to use")
+	userName := flag.String("username", "user%d", "Username of normal users. `%d` is a placeholder for an incrementing number")
+	userPassword := flag.String("userpassword", "password", "Login password for user clients")
 	adminClients := flag.Int("admins", 10, "Number of admin clients to use")
-	password := flag.String("password", "password", "Login password for normal and admin clients")
+	adminName := flag.String("adminname", "admin", "Username for the admin users")
+	adminPassword := flag.String("adminpassword", "admin", "Login password for the admin clients")
 	serverDomain := flag.String("server", "localhost:8000", "Domain of the OpenSlides server")
 	useSSL := flag.Bool("ssl", false, "Use ssl for http and websocket requests")
 	connectTest := flag.Bool("connect-test", false, "Use connect test. If all tests are false, this is used.")
@@ -87,32 +92,59 @@ func main() {
 
 	tests, useConnectTest := selectTests([]bool{*connectTest, *oneWriteTest, *manyWriteTest, *keepOpenTest}, *showAllErrors, *parallelSends, *parallelSends)
 
-	clients := make([]*oswstest.Client, 0, *userClients+*adminClients)
+	clients := make([]*oswstest.Client, 0, *anonymousClients+*userClients+*adminClients)
 
-	// Create admin clients
-	for i := 0; i < *adminClients; i++ {
-		clients = append(clients, oswstest.NewAdminClient(*serverDomain, *useSSL, fmt.Sprintf("admin%d", i), *password))
-	}
-
-	// Create user clients
-	for i := 0; i < *userClients; i++ {
-		clients = append(clients, oswstest.NewUserClient(*serverDomain, *useSSL, fmt.Sprintf("user%d", i), *password))
-	}
-
-	fmt.Printf("Use %d clients\n", len(clients))
+	fmt.Printf("Use %d clients\n", cap(clients))
 
 	if *logStatus {
 		defer oswstest.StartLogger(clients)()
 	}
 
-	// Login all clients
-	loginer := make([]oswstest.Loginer, 0, len(clients))
-	for _, client := range clients {
-		loginer = append(loginer, client)
-	}
 	start := time.Now()
-	oswstest.LoginClients(loginer, *parallelLogins, nil, nil)
-	log.Printf("All clients have logged in %dms", time.Since(start)/time.Millisecond)
+
+	// Create admin clients
+	if *adminClients > 0 {
+		admin := oswstest.NewAdminClient(*serverDomain, *useSSL, *adminName, *adminPassword)
+		clients = append(clients, admin)
+		if err := admin.Login(); err != nil {
+			log.Fatalf("Can not log in admin client: %v", err)
+		}
+		clients = append(clients, admin.Clone(*adminClients-1)...)
+	}
+
+	// Create anonymous clients
+	if *anonymousClients > 0 {
+		anonymous := oswstest.NewAnonymousClient(*serverDomain, *useSSL)
+		clients = append(clients, anonymous)
+		clients = append(clients, anonymous.Clone(*anonymousClients-1)...)
+	}
+
+	// Create user clients
+	if *userClients > 0 {
+		if strings.Contains(*userName, "%d") {
+			// Login different users
+			users := make([]*oswstest.Client, 0, *userClients)
+			for i := 0; i < *userClients; i++ {
+				users = append(users, oswstest.NewUserClient(*serverDomain, *useSSL, fmt.Sprintf(*userName, i), *userPassword))
+			}
+			clients = append(clients, users...)
+			loginer := make([]oswstest.Loginer, 0, len(users))
+			for _, user := range users {
+				loginer = append(loginer, user)
+			}
+			oswstest.LoginClients(loginer, *parallelLogins, nil, nil)
+		} else {
+			// Login the same user
+			user := oswstest.NewUserClient(*serverDomain, *useSSL, *userName, *userPassword)
+			clients = append(clients, user)
+			if err := user.Login(); err != nil {
+				log.Fatalf("Can not log in user client: %v", err)
+			}
+			clients = append(clients, user.Clone(*userClients-1)...)
+		}
+	}
+
+	log.Printf("All clients have been created and logged in %dms", time.Since(start)/time.Millisecond)
 
 	// Connect clients if connect test is not used.
 	if !useConnectTest {

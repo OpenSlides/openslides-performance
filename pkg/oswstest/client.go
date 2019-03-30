@@ -131,6 +131,29 @@ func NewAdminClient(serverDomain string, useSSL bool, username string, password 
 	return c
 }
 
+// Clone returns `count` copies of the client.
+// All cloned clients share the same cookie and therefor the same session.
+// The cloned clients are not connected to the server.
+func (c *Client) Clone(count int) []*Client {
+	out := make([]*Client, 0, count)
+	for i := 0; i < count; i++ {
+		out = append(out, &Client{
+			waitForConnect: make(chan struct{}),
+			waitForError:   make(chan struct{}),
+			cookies:        c.cookies,
+			serverDomain:   c.serverDomain,
+			useSSL:         c.useSSL,
+			WSConnect:      wsConnect{},
+
+			username: c.username,
+			password: c.password,
+			isAuth:   c.isAuth,
+			isAdmin:  c.isAdmin,
+		})
+	}
+	return out
+}
+
 // IsAdmin returns True, if the client is an admin client.
 func (c *Client) IsAdmin() bool {
 	return c.isAdmin

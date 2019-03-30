@@ -114,3 +114,14 @@ func TestClientConnectExpectData(t *testing.T) {
 		t.Errorf("ExpectData failed: %v", err)
 	}
 }
+
+func TestClientCloneUserClient(t *testing.T) {
+	c := oswstest.NewUserClient("domain", false, "myname", "password")
+
+	clone := c.Clone(1)
+
+	if clone[0].String() != "myname" {
+		t.Errorf("Expect the clone to have the same name es the original client, got: %s", clone[0].String())
+	}
+
+}
