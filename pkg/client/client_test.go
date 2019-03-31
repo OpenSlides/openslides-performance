@@ -62,37 +62,27 @@ func (rc *fakeReaderCloser) ReadMessage() (int, []byte, error) {
 }
 
 func TestNewClientIsAnonymous(t *testing.T) {
-	c := client.NewClient("domain")
+	c := client.NewClient()
 
 	if c.IsAdmin() {
 		t.Errorf("Expect an anonymous client not to be admin.")
 	}
-	if c.String() != "anonymous" {
-		t.Errorf("Except anonymous client to be called anonymous.")
-	}
 }
 
 func TestNewClientNotConnected(t *testing.T) {
-	c := client.NewClient("domain")
+	c := client.NewClient()
 
 	if !c.Connected().IsZero() {
 		t.Errorf("Expect a client not to be connected at startup.")
 	}
 }
 
-func TestNewClientWithUserNotAdminWithName(t *testing.T) {
-	c := client.NewClient("domain", client.WithCredentials("myname", "password"))
-
-	if c.IsAdmin() {
-		t.Errorf("Expect an user client not to be admin.")
+func TestNewClientWithAdminSessionIsAdmin(t *testing.T) {
+	session, err := client.NewSession("mydomain", false, "myname", "password", true)
+	if err != nil {
+		t.Fatalf("Can not create session: %v", err)
 	}
-	if c.String() != "myname" {
-		t.Errorf("Except user client to be called be its name, not `%s`.", c.String())
-	}
-}
-
-func TestNewClientWithAdminIsAdmin(t *testing.T) {
-	c := client.NewClient("domain", client.WithIsAdmin())
+	c := client.NewClient(client.WithSession(session))
 	if !c.IsAdmin() {
 		t.Errorf("Exect an admin user to be admin.")
 	}
@@ -100,7 +90,7 @@ func TestNewClientWithAdminIsAdmin(t *testing.T) {
 
 func TestClientConnectExpectData(t *testing.T) {
 	connection := &fakeWSConnect{}
-	c := client.NewClient("domain", client.WithConnecter(connection))
+	c := client.NewClient(client.WithServer("domain", false), client.WithConnecter(connection))
 
 	if err := c.Connect(); err != nil {
 		t.Errorf("Connect failed: %v", err)
@@ -114,13 +104,12 @@ func TestClientConnectExpectData(t *testing.T) {
 	}
 }
 
-func TestClientCloneUserClient(t *testing.T) {
-	c := client.NewClient("domain", client.WithCredentials("myname", "password"))
+// func TestClientCloneUserClient(t *testing.T) {
+// 	c := client.NewClient("domain", client.WithCredentials("myname", "password"))
 
-	clone := c.Clone(1)
+// 	clone := c.Clone(1)
 
-	if clone[0].String() != "myname" {
-		t.Errorf("Expect the clone to have the same name es the original client, got: %s", clone[0].String())
-	}
-
-}
+// 	if clone[0].String() != "myname" {
+// 		t.Errorf("Expect the clone to have the same name es the original client, got: %s", clone[0].String())
+// 	}
+// }

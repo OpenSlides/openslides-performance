@@ -20,8 +20,9 @@ type ReaderCloser interface {
 type wsConnect struct{}
 
 func (ws wsConnect) Connect(uri string, cookieJar *cookiejar.Jar) (conn ReaderCloser, err error) {
-	dialer := websocket.Dialer{
-		Jar: cookieJar,
+	dialer := websocket.Dialer{}
+	if cookieJar != nil {
+		dialer.Jar = cookieJar
 	}
 	conn, _, err = dialer.Dial(uri, nil)
 	return

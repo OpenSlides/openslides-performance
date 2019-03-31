@@ -95,63 +95,59 @@ func main() {
 	tests, useConnectTest := selectTests([]bool{*connectTest, *oneWriteTest, *manyWriteTest, *keepOpenTest}, *showAllErrors, *parallelSends, *parallelSends)
 
 	clients := make([]*client.Client, 0, *anonymousClients+*userClients+*adminClients)
-
 	fmt.Printf("Use %d clients\n", cap(clients))
 
-	if *logStatus {
-		defer logger.StartLogger(clients)()
-	}
+	loginer := make([]tester.Loginer, 0)
 
-	start := time.Now()
-
-	var sslOption client.Option
-	if *useSSL {
-		sslOption = client.WithSSL()
-	}
-
-	// Create admin clients
 	if *adminClients > 0 {
-		admin := client.NewClient(*serverDomain, sslOption, client.WithCredentials(*adminName, *adminPassword), client.WithIsAdmin())
-		clients = append(clients, admin)
-		if err := admin.Login(); err != nil {
-			log.Fatalf("Can not log in admin client: %v", err)
+		session, err := client.NewSession(*serverDomain, *useSSL, *adminName, *adminPassword, true)
+		if err != nil {
+			log.Fatalf("Can not create admin session: %v", err)
 		}
-		clients = append(clients, admin.Clone(*adminClients-1)...)
-	}
 
-	// Create anonymous clients
-	if *anonymousClients > 0 {
-		anonymous := client.NewClient(*serverDomain, sslOption)
-		clients = append(clients, anonymous)
-		clients = append(clients, anonymous.Clone(*anonymousClients-1)...)
+		loginer = append(loginer, session)
+		for i := 0; i < *adminClients; i++ {
+			clients = append(clients, client.NewClient(client.WithSession(session)))
+		}
 	}
 
 	// Create user clients
 	if *userClients > 0 {
 		if strings.Contains(*userName, "%d") {
 			// Login different users
-			users := make([]*client.Client, 0, *userClients)
 			for i := 0; i < *userClients; i++ {
-				users = append(users, client.NewClient(*serverDomain, sslOption, client.WithCredentials(fmt.Sprintf(*userName, i), *userPassword)))
+				session, err := client.NewSession(*serverDomain, *useSSL, fmt.Sprintf(*userName, i), *userPassword, false)
+				if err != nil {
+					log.Fatalf("Can not create user session: %v", err)
+				}
+				clients = append(clients, client.NewClient(client.WithSession(session)))
+				loginer = append(loginer, session)
 			}
-			clients = append(clients, users...)
-			loginer := make([]tester.Loginer, 0, len(users))
-			for _, user := range users {
-				loginer = append(loginer, user)
-			}
-			tester.LoginClients(loginer, *parallelLogins, nil, nil)
 		} else {
 			// Login the same user
-			user := client.NewClient(*serverDomain, sslOption, client.WithCredentials(*userName, *userPassword))
-			clients = append(clients, user)
-			if err := user.Login(); err != nil {
-				log.Fatalf("Can not log in user client: %v", err)
+			session, err := client.NewSession(*serverDomain, *useSSL, *userName, *userPassword, false)
+			if err != nil {
+				log.Fatalf("Can not create user session: %v", err)
 			}
-			clients = append(clients, user.Clone(*userClients-1)...)
+
+			loginer = append(loginer, session)
+			for i := 0; i < *userClients; i++ {
+				clients = append(clients, client.NewClient(client.WithSession(session)))
+			}
 		}
 	}
 
-	log.Printf("All clients have been created and logged in %dms", time.Since(start)/time.Millisecond)
+	for i := 0; i < *anonymousClients; i++ {
+		clients = append(clients, client.NewClient(client.WithServer(*serverDomain, *useSSL)))
+	}
+
+	if *logStatus {
+		defer logger.StartLogger(clients)()
+	}
+
+	start := time.Now()
+	tester.LoginClients(loginer, *parallelLogins, nil, nil)
+	log.Printf("Login %d sessions in %dms", len(loginer), time.Since(start)/time.Millisecond)
 
 	// Connect clients if connect test is not used.
 	if !useConnectTest {
@@ -164,8 +160,8 @@ func main() {
 		log.Printf("All clients have been connected in %dms", time.Since(start)/time.Millisecond)
 	}
 
-	start = time.Now()
 	// Run all tests and print the results
+	start = time.Now()
 	result := tester.RunTests(clients, tests, listenAbort())
 	log.Printf("All tests took %dms", time.Since(start)/time.Millisecond)
 	fmt.Println()

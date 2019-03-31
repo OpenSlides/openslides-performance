@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"net/http/cookiejar"
-	"strings"
 	"sync"
 	"time"
 )
@@ -25,27 +24,19 @@ const (
 
 // Client represents one connection to the OpenSlides server.
 type Client struct {
-	username string
-	password string
-	isAdmin  bool
-
-	wsConnect wsConnecter
-
+	wsConnect         wsConnecter
 	connectionAttemts int
-	loginAttemts      int
+	connected         time.Time
+	connectedMu       sync.RWMutex
+	waitForError      chan struct{} // Will be closed on error
+	waitForConnect    chan struct{} // will be closed when the client open connects
 
 	messageCount int   // Counts how many websocket messages the client received
 	wsError      error // Saves a websocket error if it happens
 
-	cookies *cookiejar.Jar
-
-	connected      time.Time
-	connectedMu    sync.RWMutex
-	waitForError   chan struct{} // Will be closed on error
-	waitForConnect chan struct{} // will be closed when the client open connects
-
-	serverDomain string
-	useSSL       bool
+	server  string
+	ssl     bool
+	session *Session
 
 	// When a websocket package is received, the done channel of all structs are closed
 	// when it is the `count` message
@@ -54,18 +45,11 @@ type Client struct {
 }
 
 // NewClient creates a new client. Use `Option` to add login credentials etc.
-func NewClient(serverDomain string, opts ...Option) *Client {
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		log.Fatalf("Can not create cookie jar, %s\n", err)
-	}
+func NewClient(opts ...Option) *Client {
 	c := &Client{
 		waitForConnect:    make(chan struct{}),
 		waitForError:      make(chan struct{}),
-		cookies:           jar,
-		serverDomain:      serverDomain,
 		wsConnect:         wsConnect{},
-		loginAttemts:      3,
 		connectionAttemts: 5,
 	}
 
@@ -78,72 +62,6 @@ func NewClient(serverDomain string, opts ...Option) *Client {
 	return c
 }
 
-// Clone returns `count` copies of the client.
-// All cloned clients share the same cookie and therefor the same session.
-// The cloned clients are not connected to the server.
-func (c *Client) Clone(count int) []*Client {
-	out := make([]*Client, 0, count)
-	for i := 0; i < count; i++ {
-		out = append(out, &Client{
-			waitForConnect:    make(chan struct{}),
-			waitForError:      make(chan struct{}),
-			cookies:           c.cookies,
-			serverDomain:      c.serverDomain,
-			useSSL:            c.useSSL,
-			wsConnect:         wsConnect{},
-			loginAttemts:      c.loginAttemts,
-			connectionAttemts: c.connectionAttemts,
-
-			username: c.username,
-			password: c.password,
-			isAdmin:  c.isAdmin,
-		})
-	}
-	return out
-}
-
-func (c *Client) getLoginData() string {
-	return fmt.Sprintf("{\"username\": \"%s\", \"password\": \"%s\"}", c.username, c.password)
-}
-
-// Login logsin a client. This sends a login request to the server and saves
-// the session cookie for later use.
-func (c *Client) Login() error {
-	if c.username == "" {
-		return fmt.Errorf("can not login client without an username")
-	}
-
-	httpClient := &http.Client{
-		Jar: c.cookies,
-	}
-	var resp *http.Response
-	var err error
-
-	for i := 0; i < c.loginAttemts; i++ {
-		resp, err = httpClient.Post(
-			getLoginURL(c.serverDomain, c.useSSL),
-			"application/json",
-			strings.NewReader(c.getLoginData()),
-		)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-
-		// Statu Code not between 500 and 600
-		if !(500 <= resp.StatusCode && resp.StatusCode < 600) {
-			break
-		}
-		// If the error is on the server side, then retry after some time
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("login for client %s failed: StatusCode: %d", c, resp.StatusCode)
-	}
-	return nil
-}
-
 // condition is an information to a client, that the `done` channel should be closed, then
 // the client received `count` messages.
 type condition struct {
@@ -153,10 +71,17 @@ type condition struct {
 
 // Connect creates a websocket connection.
 func (c *Client) Connect() (err error) {
+	if c.session == nil && c.server == "" {
+		return fmt.Errorf("Client has not server domain. You either have to create it WithSession or WithServer")
+	}
 	var wsConnection ReaderCloser
+	var cookies *cookiejar.Jar
+	if c.session != nil {
+		cookies = c.session.cookies
+	}
 	success := false
 	for i := 0; i < c.connectionAttemts; i++ {
-		wsConnection, err = c.wsConnect.Connect(getWebsocketURL(c.serverDomain, c.useSSL), c.cookies)
+		wsConnection, err = c.wsConnect.Connect(getWebsocketURL(c.serverSSL()), cookies)
 		if err == nil {
 			// if no error happened, then we can break the loop
 			success = true
@@ -164,7 +89,6 @@ func (c *Client) Connect() (err error) {
 		}
 	}
 	if !success {
-		log.Printf("Could not connect client %s, %v\n", c, err)
 		close(c.waitForError)
 		c.wsError = err
 		return err
@@ -227,17 +151,21 @@ func (c *Client) ExpectData(count int, sinceConnect bool) error {
 	return nil
 }
 
-// Send sends a pre defined put request to the server. Only a admin client should
+// Send sends a pre defined put request to the server. Only a admin client can
 // use this method.
-func (c *Client) Send() (err error) {
-	httpClient := &http.Client{
-		Jar: c.cookies,
+func (c *Client) Send() error {
+	if !c.IsAdmin() {
+		return fmt.Errorf("only an admin client can use Send().")
 	}
-	req := getSendRequest(c.serverDomain, c.useSSL)
+
+	httpClient := &http.Client{
+		Jar: c.session.cookies,
+	}
+	req := getSendRequest(c.serverSSL())
 
 	// Write csrf token from cookie into the http header
 	var CSRFToken string
-	for _, cookie := range c.cookies.Cookies(req.URL) {
+	for _, cookie := range c.session.cookies.Cookies(req.URL) {
 		if cookie.Name == csrfCookieName {
 			CSRFToken = cookie.Value
 			break
@@ -263,9 +191,19 @@ func (c *Client) Send() (err error) {
 	return nil
 }
 
+func (c *Client) serverSSL() (string, bool) {
+	if c.session == nil {
+		return c.server, c.ssl
+	}
+	return c.session.server, c.session.ssl
+}
+
 // IsAdmin returns True, if the client is an admin client.
 func (c *Client) IsAdmin() bool {
-	return c.isAdmin
+	if c.session == nil {
+		return false
+	}
+	return c.session.isAdmin
 }
 
 // Connected returns the time since the client is connected. Returns 0 if it is not connected.
@@ -273,14 +211,6 @@ func (c *Client) Connected() time.Time {
 	c.connectedMu.RLock()
 	defer c.connectedMu.RUnlock()
 	return c.connected
-}
-
-// String returns the username of the client. `anonymous` if it is an anonymous client.
-func (c *Client) String() string {
-	if c.username == "" {
-		return "anonymous"
-	}
-	return c.username
 }
 
 // MessageCount returns the number of received messages.
