@@ -61,8 +61,8 @@ func (rc *fakeReaderCloser) ReadMessage() (int, []byte, error) {
 
 }
 
-func TestNewAnonymousClientIsAnonymous(t *testing.T) {
-	c := oswstest.NewAnonymousClient("domain", false)
+func TestNewClientIsAnonymous(t *testing.T) {
+	c := oswstest.NewClient("domain")
 
 	if c.IsAdmin() {
 		t.Errorf("Expect an anonymous client not to be admin.")
@@ -72,36 +72,35 @@ func TestNewAnonymousClientIsAnonymous(t *testing.T) {
 	}
 }
 
-func TestNewAnonymousClientNotConnected(t *testing.T) {
-	c := oswstest.NewAnonymousClient("domain", false)
+func TestNewClientNotConnected(t *testing.T) {
+	c := oswstest.NewClient("domain")
 
 	if !c.Connected().IsZero() {
 		t.Errorf("Expect a client not to be connected at startup.")
 	}
 }
 
-func TestNewUserClientNotAdminWithName(t *testing.T) {
-	c := oswstest.NewUserClient("domain", false, "myname", "password")
+func TestNewClientWithUserNotAdminWithName(t *testing.T) {
+	c := oswstest.NewClient("domain", oswstest.WithCredentials("myname", "password"))
 
 	if c.IsAdmin() {
 		t.Errorf("Expect an user client not to be admin.")
 	}
 	if c.String() != "myname" {
-		t.Errorf("Except user client to be called be its name, not %s.", c.String())
+		t.Errorf("Except user client to be called be its name, not `%s`.", c.String())
 	}
 }
 
-func TestNewAdminClientIsAdmin(t *testing.T) {
-	c := oswstest.NewAdminClient("domain", false, "myname", "password")
+func TestNewClientWithAdminIsAdmin(t *testing.T) {
+	c := oswstest.NewClient("domain", oswstest.WithIsAdmin())
 	if !c.IsAdmin() {
 		t.Errorf("Exect an admin user to be admin.")
 	}
 }
 
 func TestClientConnectExpectData(t *testing.T) {
-	c := oswstest.NewAnonymousClient("domain", false)
 	connection := &fakeWSConnect{}
-	c.WSConnect = connection
+	c := oswstest.NewClient("domain", oswstest.WithConnecter(connection))
 
 	if err := c.Connect(); err != nil {
 		t.Errorf("Connect failed: %v", err)
@@ -116,7 +115,7 @@ func TestClientConnectExpectData(t *testing.T) {
 }
 
 func TestClientCloneUserClient(t *testing.T) {
-	c := oswstest.NewUserClient("domain", false, "myname", "password")
+	c := oswstest.NewClient("domain", oswstest.WithCredentials("myname", "password"))
 
 	clone := c.Clone(1)
 

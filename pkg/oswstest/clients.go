@@ -52,7 +52,8 @@ func parallelWorker(tasks []interface{}, parallel int, duration chan<- time.Dura
 // LoginClients logs in a slice of clients. Uses `parallel` nworkers
 // to login clients in parallel.
 // Returns the time how long each login took on the duration channel and any
-// error on the errC channel.
+// error on the errC channel. Both channels can be nil.
+// If the channels are not nil and full, then the operation will block.
 func LoginClients(clients []Loginer, parallel int, duration chan<- time.Duration, errC chan<- error) {
 	tasks := make([]interface{}, 0, len(clients))
 	for _, task := range clients {
@@ -67,7 +68,8 @@ func LoginClients(clients []Loginer, parallel int, duration chan<- time.Duration
 // ConnectClients connects a slice of clients via websocket to the server. Uses
 // `parallel` workers to connect clients in parallel.
 // Returns the time how long each login took on the duration channel and any
-// error on the errC channel.
+// error on the errC channel. Both channels can be nil.
+// If the channels are not nil and full, then the operation will block.
 func ConnectClients(clients []Connecter, parallel int, duration chan<- time.Duration, errC chan<- error) {
 	tasks := make([]interface{}, 0, len(clients))
 	for _, task := range clients {
@@ -82,8 +84,8 @@ func ConnectClients(clients []Connecter, parallel int, duration chan<- time.Dura
 // SendClients sends the write request for a slice of clients. Sends
 // `parallel` requests in parallel. `errChan` sends an error for each
 // client, when the send request failed. `sended` sends the time it took to send
-// the request. Sends a signal on the `done` channel when all clients send the
-// request.
+// the request. Both channels can be nil.
+// If the channels are not nil and full, then the operation will block.
 func SendClients(clients []Sender, parallel int, duration chan<- time.Duration, errC chan<- error) {
 	tasks := make([]interface{}, 0, len(clients))
 	for _, task := range clients {
@@ -98,6 +100,7 @@ func SendClients(clients []Sender, parallel int, duration chan<- time.Duration, 
 // ListenToClients listens to a slice of clients. Sends the results
 // via the given channels. One for the data (duration since connected) and one for errors.
 // Ends the process, when each client got `count` messages or one errors.
+// If the channels are full, then the operation will block.
 func ListenToClients(clients []Listener, duration chan<- time.Duration, errC chan<- error, count int, sinceStart bool) {
 	// Block until all clients are done
 	var wg sync.WaitGroup

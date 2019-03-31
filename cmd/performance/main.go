@@ -102,9 +102,14 @@ func main() {
 
 	start := time.Now()
 
+	sslOption := oswstest.Option{}
+	if *useSSL {
+		sslOption = oswstest.WithSSL()
+	}
+
 	// Create admin clients
 	if *adminClients > 0 {
-		admin := oswstest.NewAdminClient(*serverDomain, *useSSL, *adminName, *adminPassword)
+		admin := oswstest.NewClient(*serverDomain, sslOption, oswstest.WithCredentials(*adminName, *adminPassword), oswstest.WithIsAdmin())
 		clients = append(clients, admin)
 		if err := admin.Login(); err != nil {
 			log.Fatalf("Can not log in admin client: %v", err)
@@ -114,7 +119,7 @@ func main() {
 
 	// Create anonymous clients
 	if *anonymousClients > 0 {
-		anonymous := oswstest.NewAnonymousClient(*serverDomain, *useSSL)
+		anonymous := oswstest.NewClient(*serverDomain, sslOption)
 		clients = append(clients, anonymous)
 		clients = append(clients, anonymous.Clone(*anonymousClients-1)...)
 	}
@@ -125,7 +130,7 @@ func main() {
 			// Login different users
 			users := make([]*oswstest.Client, 0, *userClients)
 			for i := 0; i < *userClients; i++ {
-				users = append(users, oswstest.NewUserClient(*serverDomain, *useSSL, fmt.Sprintf(*userName, i), *userPassword))
+				users = append(users, oswstest.NewClient(*serverDomain, sslOption, oswstest.WithCredentials(fmt.Sprintf(*userName, i), *userPassword)))
 			}
 			clients = append(clients, users...)
 			loginer := make([]oswstest.Loginer, 0, len(users))
@@ -135,7 +140,7 @@ func main() {
 			oswstest.LoginClients(loginer, *parallelLogins, nil, nil)
 		} else {
 			// Login the same user
-			user := oswstest.NewUserClient(*serverDomain, *useSSL, *userName, *userPassword)
+			user := oswstest.NewClient(*serverDomain, sslOption, oswstest.WithCredentials(*userName, *userPassword))
 			clients = append(clients, user)
 			if err := user.Login(); err != nil {
 				log.Fatalf("Can not log in user client: %v", err)

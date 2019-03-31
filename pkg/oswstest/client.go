@@ -71,14 +71,36 @@ func getSendRequest(serverDomain string, useSSL bool) (r *http.Request) {
 	return r
 }
 
-// Client represents one of many openslides users
+// Option is an option for the NewClient() function.
+type Option func(*Client)
+
+// WithSSL tels a client to use an ssl connection.
+func WithSSL() Option {
+	return func(c *Client) { c.useSSL = true }
+}
+
+// WithCredentials adds username and passwort to an client.
+func WithCredentials(username, password string) Option {
+	return func(c *Client) { c.username = username; c.password = password }
+}
+
+// WithIsAdmin tells an client, that it is an admin.
+func WithIsAdmin() Option {
+	return func(c *Client) { c.isAdmin = true }
+}
+
+// WithConnecter sets the connection interface of the client that manages the websocket connection.
+func WithConnecter(connect wsConnecter) Option {
+	return func(c *Client) { c.wsConnect = connect }
+}
+
+// Client represents one connection to the OpenSlides server.
 type Client struct {
 	username string
 	password string
-	isAuth   bool
 	isAdmin  bool
 
-	WSConnect wsConnecter
+	wsConnect wsConnecter
 
 	messageCount int   // Counts how many websocket messages the client received
 	wsError      error // Saves a websocket error if it happens
@@ -99,35 +121,24 @@ type Client struct {
 	exceptDataMu sync.RWMutex // Protects expectData and messageCount
 }
 
-// NewAnonymousClient creates an anonymous client.
-func NewAnonymousClient(serverDomain string, useSSL bool) *Client {
+// NewClient creates a new client. Use `Option` to add login credentials etc.
+func NewClient(serverDomain string, opts ...Option) *Client {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		log.Fatalf("Can not create cookie jar, %s\n", err)
 	}
-	return &Client{
+	c := &Client{
 		waitForConnect: make(chan struct{}),
 		waitForError:   make(chan struct{}),
 		cookies:        jar,
 		serverDomain:   serverDomain,
-		useSSL:         useSSL,
-		WSConnect:      wsConnect{},
+		wsConnect:      wsConnect{},
 	}
-}
 
-// NewUserClient creates an user client.
-func NewUserClient(serverDomain string, useSSL bool, username string, password string) *Client {
-	c := NewAnonymousClient(serverDomain, useSSL)
-	c.username = username
-	c.password = password
-	c.isAuth = true
-	return c
-}
+	for _, opt := range opts {
+		opt(c)
+	}
 
-// NewAdminClient creates an admin client.
-func NewAdminClient(serverDomain string, useSSL bool, username string, password string) *Client {
-	c := NewUserClient(serverDomain, useSSL, username, password)
-	c.isAdmin = true
 	return c
 }
 
@@ -143,11 +154,10 @@ func (c *Client) Clone(count int) []*Client {
 			cookies:        c.cookies,
 			serverDomain:   c.serverDomain,
 			useSSL:         c.useSSL,
-			WSConnect:      wsConnect{},
+			wsConnect:      wsConnect{},
 
 			username: c.username,
 			password: c.password,
-			isAuth:   c.isAuth,
 			isAdmin:  c.isAdmin,
 		})
 	}
@@ -168,7 +178,7 @@ func (c *Client) Connected() time.Time {
 
 // String returns the username of the client. `anonymous` if it is an anonymous client.
 func (c *Client) String() string {
-	if !c.isAuth {
+	if c.username == "" {
 		return "anonymous"
 	}
 	return c.username
@@ -185,7 +195,7 @@ type condition struct {
 func (c *Client) Connect() (err error) {
 	var wsConnection ReaderCloser
 	for i := 0; i < MaxConnectionAttemts; i++ {
-		wsConnection, err = c.WSConnect.Connect(getWebsocketURL(c.serverDomain, c.useSSL), c.cookies)
+		wsConnection, err = c.wsConnect.Connect(getWebsocketURL(c.serverDomain, c.useSSL), c.cookies)
 		if err == nil {
 			// if no error happened, then we can break the loop
 			break
@@ -268,11 +278,16 @@ func (c *Client) getLoginData() string {
 
 // Login logsin a client. This sends a login request to the server and saves
 // the session cookie for later use.
-func (c *Client) Login() (err error) {
+func (c *Client) Login() error {
+	if c.username == "" {
+		return fmt.Errorf("can not login client without an username")
+	}
+
 	httpClient := &http.Client{
 		Jar: c.cookies,
 	}
 	var resp *http.Response
+	var err error
 
 	for i := 0; i < MaxLoginAttemts; i++ {
 		resp, err = httpClient.Post(

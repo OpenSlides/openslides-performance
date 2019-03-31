@@ -6,8 +6,9 @@ import (
 	"time"
 )
 
-// RunTests runs some tests for a slice of clients. It returns the TestResults
-// for each test.
+// RunTests runs some tests for a slice of clients. It returns the result of the all
+// called test as string message.
+// The tests are canceld, when the cancel channel is closed.
 func RunTests(clients []*Client, tests []Tester, cancel <-chan struct{}) (r string) {
 	rs := make([]string, 0)
 	defer func() { r = strings.Join(rs, "\n") }()
@@ -29,10 +30,9 @@ type Tester interface {
 	Test([]*Client, <-chan struct{}) string
 }
 
-// ConnectTest opens connections for any given client. It returns two
-// TestResults. The first measures the time until the connection was open, the
-// second measures the time until the first data was received. Expects, that the
-// wsconnection of the clients are closed.
+// ConnectTest opens connections for any given client. It measures the time
+// until the connection was open andthe time until the first data was received.
+// Expects, that the wsconnection of the clients are closed.
 type ConnectTest struct {
 	ShowAllErrors       bool
 	ParallelConnections int

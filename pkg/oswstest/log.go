@@ -6,7 +6,7 @@ import (
 )
 
 // StartLogger starts a logger, that prints some progress informations each seconds.
-// Returns a cancel function can be called to stop the logging.
+// Returns a cancel function to stop the logging.
 func StartLogger(clients []*Client) func() {
 	done := make(chan struct{})
 
