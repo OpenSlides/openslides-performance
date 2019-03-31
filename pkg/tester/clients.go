@@ -1,4 +1,4 @@
-package oswstest
+package tester
 
 import (
 	"sync"

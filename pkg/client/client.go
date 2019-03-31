@@ -1,4 +1,4 @@
-package oswstest
+package client
 
 import (
 	"fmt"
@@ -11,88 +11,17 @@ import (
 	"time"
 )
 
-// Loginer is a type that can be logged in
-type Loginer interface {
-	Login() error
-}
+const (
+	// loginURLPath is the path to build the url for login. It has no leading slash.
+	loginURLPath = "apps/users/login/"
 
-// Connecter is a type that can connect.
-type Connecter interface {
-	Connect() error
-}
+	// wsURLPath is the path to build the websocket url. It has no leading slash.
+	wsURLPath = "ws/?change_id=0&autoupdate=on"
 
-// Sender is a type that can Send something.
-type Sender interface {
-	Send() error
-}
-
-// Listener is a type that you get except to receive data.
-type Listener interface {
-	ExpectData(count int, sinceConnect bool) error
-	Connected() time.Time
-}
-
-func getLoginURL(serverDomain string, useSSL bool) string {
-	protocol := "http"
-	if useSSL {
-		protocol = "https"
-	}
-	return fmt.Sprintf("%s://%s/%s", protocol, serverDomain, loginURLPath)
-}
-
-func getWebsocketURL(serverDomain string, useSSL bool) string {
-	protocol := "ws"
-	if useSSL {
-		protocol = "wss"
-	}
-	return fmt.Sprintf("%s://%s/%s", protocol, serverDomain, wsURLPath)
-}
-
-// getSendRequest returns the request that is send by the admin clients
-func getSendRequest(serverDomain string, useSSL bool) (r *http.Request) {
-	protocol := "http"
-	if useSSL {
-		protocol = "https"
-	}
-
-	r, err := http.NewRequest(
-		"PUT",
-		fmt.Sprintf("%s://%s/%s", protocol, serverDomain, "rest/agenda/item/1/"),
-		strings.NewReader(`
-			{"id":1,"item_number":"","title":"foo1","list_view_title":"foo1",
-			"comment":"test","closed":false,"type":1,"is_hidden":false,"duration":null,
-			"speaker_list_closed":false,"content_object":{"collection":"topics/topic",
-			"id":1},"weight":10000,"parent_id":null,"parentCount":0,"hover":true}`),
-	)
-	if err != nil {
-		log.Fatalf("Coud not build the request, %s", err)
-	}
-	r.Close = true
-	return r
-}
-
-// Option is an option for the NewClient() function.
-type Option func(*Client)
-
-// WithSSL tels a client to use an ssl connection.
-func WithSSL() Option {
-	return func(c *Client) { c.useSSL = true }
-}
-
-// WithCredentials adds username and passwort to an client.
-func WithCredentials(username, password string) Option {
-	return func(c *Client) { c.username = username; c.password = password }
-}
-
-// WithIsAdmin tells an client, that it is an admin.
-func WithIsAdmin() Option {
-	return func(c *Client) { c.isAdmin = true }
-}
-
-// WithConnecter sets the connection interface of the client that manages the websocket connection.
-func WithConnecter(connect wsConnecter) Option {
-	return func(c *Client) { c.wsConnect = connect }
-}
+	// CSRFCookieName is the name of the CSRF cookie of OpenSlides. Make sure, that
+	// this is the same as in the OpenSlides config.
+	csrfCookieName = "OpenSlidesCsrfToken"
+)
 
 // Client represents one connection to the OpenSlides server.
 type Client struct {
@@ -101,6 +30,9 @@ type Client struct {
 	isAdmin  bool
 
 	wsConnect wsConnecter
+
+	connectionAttemts int
+	loginAttemts      int
 
 	messageCount int   // Counts how many websocket messages the client received
 	wsError      error // Saves a websocket error if it happens
@@ -128,15 +60,19 @@ func NewClient(serverDomain string, opts ...Option) *Client {
 		log.Fatalf("Can not create cookie jar, %s\n", err)
 	}
 	c := &Client{
-		waitForConnect: make(chan struct{}),
-		waitForError:   make(chan struct{}),
-		cookies:        jar,
-		serverDomain:   serverDomain,
-		wsConnect:      wsConnect{},
+		waitForConnect:    make(chan struct{}),
+		waitForError:      make(chan struct{}),
+		cookies:           jar,
+		serverDomain:      serverDomain,
+		wsConnect:         wsConnect{},
+		loginAttemts:      3,
+		connectionAttemts: 5,
 	}
 
 	for _, opt := range opts {
-		opt(c)
+		if opt != nil {
+			opt(c)
+		}
 	}
 
 	return c
@@ -149,12 +85,14 @@ func (c *Client) Clone(count int) []*Client {
 	out := make([]*Client, 0, count)
 	for i := 0; i < count; i++ {
 		out = append(out, &Client{
-			waitForConnect: make(chan struct{}),
-			waitForError:   make(chan struct{}),
-			cookies:        c.cookies,
-			serverDomain:   c.serverDomain,
-			useSSL:         c.useSSL,
-			wsConnect:      wsConnect{},
+			waitForConnect:    make(chan struct{}),
+			waitForError:      make(chan struct{}),
+			cookies:           c.cookies,
+			serverDomain:      c.serverDomain,
+			useSSL:            c.useSSL,
+			wsConnect:         wsConnect{},
+			loginAttemts:      c.loginAttemts,
+			connectionAttemts: c.connectionAttemts,
 
 			username: c.username,
 			password: c.password,
@@ -164,24 +102,46 @@ func (c *Client) Clone(count int) []*Client {
 	return out
 }
 
-// IsAdmin returns True, if the client is an admin client.
-func (c *Client) IsAdmin() bool {
-	return c.isAdmin
+func (c *Client) getLoginData() string {
+	return fmt.Sprintf("{\"username\": \"%s\", \"password\": \"%s\"}", c.username, c.password)
 }
 
-// Connected returns the time since the client is connected. Returns 0 if it is not connected.
-func (c *Client) Connected() time.Time {
-	c.connectedMu.RLock()
-	defer c.connectedMu.RUnlock()
-	return c.connected
-}
-
-// String returns the username of the client. `anonymous` if it is an anonymous client.
-func (c *Client) String() string {
+// Login logsin a client. This sends a login request to the server and saves
+// the session cookie for later use.
+func (c *Client) Login() error {
 	if c.username == "" {
-		return "anonymous"
+		return fmt.Errorf("can not login client without an username")
 	}
-	return c.username
+
+	httpClient := &http.Client{
+		Jar: c.cookies,
+	}
+	var resp *http.Response
+	var err error
+
+	for i := 0; i < c.loginAttemts; i++ {
+		resp, err = httpClient.Post(
+			getLoginURL(c.serverDomain, c.useSSL),
+			"application/json",
+			strings.NewReader(c.getLoginData()),
+		)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		// Statu Code not between 500 and 600
+		if !(500 <= resp.StatusCode && resp.StatusCode < 600) {
+			break
+		}
+		// If the error is on the server side, then retry after some time
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("login for client %s failed: StatusCode: %d", c, resp.StatusCode)
+	}
+	return nil
 }
 
 // condition is an information to a client, that the `done` channel should be closed, then
@@ -194,15 +154,17 @@ type condition struct {
 // Connect creates a websocket connection.
 func (c *Client) Connect() (err error) {
 	var wsConnection ReaderCloser
-	for i := 0; i < MaxConnectionAttemts; i++ {
+	success := false
+	for i := 0; i < c.connectionAttemts; i++ {
 		wsConnection, err = c.wsConnect.Connect(getWebsocketURL(c.serverDomain, c.useSSL), c.cookies)
 		if err == nil {
 			// if no error happened, then we can break the loop
+			success = true
 			break
 		}
 	}
-	if err != nil {
-		log.Printf("Could not connect client %s, %s\n", c, err)
+	if !success {
+		log.Printf("Could not connect client %s, %v\n", c, err)
 		close(c.waitForError)
 		c.wsError = err
 		return err
@@ -265,55 +227,6 @@ func (c *Client) ExpectData(count int, sinceConnect bool) error {
 	return nil
 }
 
-// MessageCount returns the number of received messages.
-func (c *Client) MessageCount() int {
-	c.exceptDataMu.RLock()
-	defer c.exceptDataMu.RUnlock()
-	return c.messageCount
-}
-
-func (c *Client) getLoginData() string {
-	return fmt.Sprintf("{\"username\": \"%s\", \"password\": \"%s\"}", c.username, c.password)
-}
-
-// Login logsin a client. This sends a login request to the server and saves
-// the session cookie for later use.
-func (c *Client) Login() error {
-	if c.username == "" {
-		return fmt.Errorf("can not login client without an username")
-	}
-
-	httpClient := &http.Client{
-		Jar: c.cookies,
-	}
-	var resp *http.Response
-	var err error
-
-	for i := 0; i < MaxLoginAttemts; i++ {
-		resp, err = httpClient.Post(
-			getLoginURL(c.serverDomain, c.useSSL),
-			"application/json",
-			strings.NewReader(c.getLoginData()),
-		)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-
-		// Statu Code not between 500 and 600
-		if !(500 <= resp.StatusCode && resp.StatusCode < 600) {
-			break
-		}
-		// If the error is on the server side, then retry after some time
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("login for client %s failed: StatusCode: %d", c, resp.StatusCode)
-	}
-	return nil
-}
-
 // Send sends a pre defined put request to the server. Only a admin client should
 // use this method.
 func (c *Client) Send() (err error) {
@@ -325,7 +238,7 @@ func (c *Client) Send() (err error) {
 	// Write csrf token from cookie into the http header
 	var CSRFToken string
 	for _, cookie := range c.cookies.Cookies(req.URL) {
-		if cookie.Name == CSRFCookieName {
+		if cookie.Name == csrfCookieName {
 			CSRFToken = cookie.Value
 			break
 		}
@@ -346,6 +259,45 @@ func (c *Client) Send() (err error) {
 		bodyBuffer, _ := ioutil.ReadAll(resp.Body)
 		fmt.Printf("%s\n", bodyBuffer)
 		return fmt.Errorf("got an error by sending the request, status: %s", resp.Status)
+	}
+	return nil
+}
+
+// IsAdmin returns True, if the client is an admin client.
+func (c *Client) IsAdmin() bool {
+	return c.isAdmin
+}
+
+// Connected returns the time since the client is connected. Returns 0 if it is not connected.
+func (c *Client) Connected() time.Time {
+	c.connectedMu.RLock()
+	defer c.connectedMu.RUnlock()
+	return c.connected
+}
+
+// String returns the username of the client. `anonymous` if it is an anonymous client.
+func (c *Client) String() string {
+	if c.username == "" {
+		return "anonymous"
+	}
+	return c.username
+}
+
+// MessageCount returns the number of received messages.
+func (c *Client) MessageCount() int {
+	c.exceptDataMu.RLock()
+	defer c.exceptDataMu.RUnlock()
+	return c.messageCount
+}
+
+// WaitForError blogs until an websocket error happens at the client or the
+// cancel channel is closed.
+// Returns the websocket error or nil
+func (c *Client) WaitForError(cancel <-chan struct{}) error {
+	select {
+	case <-c.waitForError:
+		return c.wsError
+	case <-cancel:
 	}
 	return nil
 }

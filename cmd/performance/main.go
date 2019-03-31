@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openslides/openslides-performance/pkg/oswstest"
+	"github.com/openslides/openslides-performance/pkg/client"
+	"github.com/openslides/openslides-performance/pkg/logger"
+	"github.com/openslides/openslides-performance/pkg/tester"
 )
 
 // Aborts the program when strg+c is hit. Hart closes it at a second strg+c
@@ -33,14 +35,14 @@ func listenAbort() <-chan struct{} {
 // Returns the default tests (all except keep open test) when
 // non test is selected. The second return value is true, then
 // `ConnectTest` is used.
-func selectTests(flags []bool, showAllErrors bool, parallelConnections int, parallelSends int) (tests []oswstest.Tester, useConnectTest bool) {
-	allTests := []oswstest.Tester{
-		&oswstest.ConnectTest{ShowAllErrors: showAllErrors, ParallelConnections: parallelConnections},
-		&oswstest.OneWriteTest{ShowAllErrors: showAllErrors},
-		&oswstest.ManyWriteTest{ShowAllErrors: showAllErrors, ParallelSends: parallelSends},
-		&oswstest.KeepOpenTest{},
+func selectTests(flags []bool, showAllErrors bool, parallelConnections int, parallelSends int) (tests []tester.Tester, useConnectTest bool) {
+	allTests := []tester.Tester{
+		&tester.ConnectTest{ShowAllErrors: showAllErrors, ParallelConnections: parallelConnections},
+		&tester.OneWriteTest{ShowAllErrors: showAllErrors},
+		&tester.ManyWriteTest{ShowAllErrors: showAllErrors, ParallelSends: parallelSends},
+		&tester.KeepOpenTest{},
 	}
-	tests = make([]oswstest.Tester, 0, 4)
+	tests = make([]tester.Tester, 0, 4)
 
 	for i, flag := range flags {
 		if flag {
@@ -92,24 +94,24 @@ func main() {
 
 	tests, useConnectTest := selectTests([]bool{*connectTest, *oneWriteTest, *manyWriteTest, *keepOpenTest}, *showAllErrors, *parallelSends, *parallelSends)
 
-	clients := make([]*oswstest.Client, 0, *anonymousClients+*userClients+*adminClients)
+	clients := make([]*client.Client, 0, *anonymousClients+*userClients+*adminClients)
 
 	fmt.Printf("Use %d clients\n", cap(clients))
 
 	if *logStatus {
-		defer oswstest.StartLogger(clients)()
+		defer logger.StartLogger(clients)()
 	}
 
 	start := time.Now()
 
-	sslOption := oswstest.Option{}
+	var sslOption client.Option
 	if *useSSL {
-		sslOption = oswstest.WithSSL()
+		sslOption = client.WithSSL()
 	}
 
 	// Create admin clients
 	if *adminClients > 0 {
-		admin := oswstest.NewClient(*serverDomain, sslOption, oswstest.WithCredentials(*adminName, *adminPassword), oswstest.WithIsAdmin())
+		admin := client.NewClient(*serverDomain, sslOption, client.WithCredentials(*adminName, *adminPassword), client.WithIsAdmin())
 		clients = append(clients, admin)
 		if err := admin.Login(); err != nil {
 			log.Fatalf("Can not log in admin client: %v", err)
@@ -119,7 +121,7 @@ func main() {
 
 	// Create anonymous clients
 	if *anonymousClients > 0 {
-		anonymous := oswstest.NewClient(*serverDomain, sslOption)
+		anonymous := client.NewClient(*serverDomain, sslOption)
 		clients = append(clients, anonymous)
 		clients = append(clients, anonymous.Clone(*anonymousClients-1)...)
 	}
@@ -128,19 +130,19 @@ func main() {
 	if *userClients > 0 {
 		if strings.Contains(*userName, "%d") {
 			// Login different users
-			users := make([]*oswstest.Client, 0, *userClients)
+			users := make([]*client.Client, 0, *userClients)
 			for i := 0; i < *userClients; i++ {
-				users = append(users, oswstest.NewClient(*serverDomain, sslOption, oswstest.WithCredentials(fmt.Sprintf(*userName, i), *userPassword)))
+				users = append(users, client.NewClient(*serverDomain, sslOption, client.WithCredentials(fmt.Sprintf(*userName, i), *userPassword)))
 			}
 			clients = append(clients, users...)
-			loginer := make([]oswstest.Loginer, 0, len(users))
+			loginer := make([]tester.Loginer, 0, len(users))
 			for _, user := range users {
 				loginer = append(loginer, user)
 			}
-			oswstest.LoginClients(loginer, *parallelLogins, nil, nil)
+			tester.LoginClients(loginer, *parallelLogins, nil, nil)
 		} else {
 			// Login the same user
-			user := oswstest.NewClient(*serverDomain, sslOption, oswstest.WithCredentials(*userName, *userPassword))
+			user := client.NewClient(*serverDomain, sslOption, client.WithCredentials(*userName, *userPassword))
 			clients = append(clients, user)
 			if err := user.Login(); err != nil {
 				log.Fatalf("Can not log in user client: %v", err)
@@ -153,18 +155,18 @@ func main() {
 
 	// Connect clients if connect test is not used.
 	if !useConnectTest {
-		connecter := make([]oswstest.Connecter, 0, len(clients))
+		connecter := make([]tester.Connecter, 0, len(clients))
 		for _, client := range clients {
 			connecter = append(connecter, client)
 		}
 		start = time.Now()
-		oswstest.ConnectClients(connecter, *parallelConnections, nil, nil)
+		tester.ConnectClients(connecter, *parallelConnections, nil, nil)
 		log.Printf("All clients have been connected in %dms", time.Since(start)/time.Millisecond)
 	}
 
 	start = time.Now()
 	// Run all tests and print the results
-	result := oswstest.RunTests(clients, tests, listenAbort())
+	result := tester.RunTests(clients, tests, listenAbort())
 	log.Printf("All tests took %dms", time.Since(start)/time.Millisecond)
 	fmt.Println()
 	fmt.Println(result)

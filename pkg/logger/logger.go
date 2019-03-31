@@ -1,13 +1,15 @@
-package oswstest
+package logger
 
 import (
 	"log"
 	"time"
+
+	"github.com/openslides/openslides-performance/pkg/client"
 )
 
 // StartLogger starts a logger, that prints some progress informations each seconds.
 // Returns a cancel function to stop the logging.
-func StartLogger(clients []*Client) func() {
+func StartLogger(clients []*client.Client) func() {
 	done := make(chan struct{})
 
 	go func() {
@@ -22,17 +24,13 @@ func StartLogger(clients []*Client) func() {
 			}
 			var connected int
 			var received int
-			var errors int
 			for _, c := range clients {
 				if !c.Connected().IsZero() {
 					connected++
 				}
-				if c.wsError != nil {
-					errors++
-				}
 				received += c.MessageCount()
 			}
-			log.Printf("connected: %d, received: %d, errors: %d", connected, received, errors)
+			log.Printf("connected: %d, received: %d", connected, received)
 		}
 	}()
 	return func() {

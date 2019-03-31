@@ -52,7 +52,6 @@ and until they all got there first data.
 Expects the first client to be an admin client and all clients
 to be connected. This test sends one write request with the first client and
 measures the time until all clients get the changed data.
-oswstest.OneWriteTest,
 
 
 ### ManyWriteTest

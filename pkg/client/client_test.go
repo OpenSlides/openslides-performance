@@ -1,11 +1,11 @@
-package oswstest_test
+package client_test
 
 import (
 	"fmt"
 	"net/http/cookiejar"
 	"testing"
 
-	"github.com/openslides/openslides-performance/pkg/oswstest"
+	"github.com/openslides/openslides-performance/pkg/client"
 )
 
 type fakeWSConnect struct {
@@ -13,7 +13,7 @@ type fakeWSConnect struct {
 	rc        *fakeReaderCloser
 }
 
-func (ws *fakeWSConnect) Connect(uri string, cookieJar *cookiejar.Jar) (conn oswstest.ReaderCloser, err error) {
+func (ws *fakeWSConnect) Connect(uri string, cookieJar *cookiejar.Jar) (conn client.ReaderCloser, err error) {
 	ws.connected = true
 	rc := fakeReaderCloser{
 		connection:   ws,
@@ -62,7 +62,7 @@ func (rc *fakeReaderCloser) ReadMessage() (int, []byte, error) {
 }
 
 func TestNewClientIsAnonymous(t *testing.T) {
-	c := oswstest.NewClient("domain")
+	c := client.NewClient("domain")
 
 	if c.IsAdmin() {
 		t.Errorf("Expect an anonymous client not to be admin.")
@@ -73,7 +73,7 @@ func TestNewClientIsAnonymous(t *testing.T) {
 }
 
 func TestNewClientNotConnected(t *testing.T) {
-	c := oswstest.NewClient("domain")
+	c := client.NewClient("domain")
 
 	if !c.Connected().IsZero() {
 		t.Errorf("Expect a client not to be connected at startup.")
@@ -81,7 +81,7 @@ func TestNewClientNotConnected(t *testing.T) {
 }
 
 func TestNewClientWithUserNotAdminWithName(t *testing.T) {
-	c := oswstest.NewClient("domain", oswstest.WithCredentials("myname", "password"))
+	c := client.NewClient("domain", client.WithCredentials("myname", "password"))
 
 	if c.IsAdmin() {
 		t.Errorf("Expect an user client not to be admin.")
@@ -92,7 +92,7 @@ func TestNewClientWithUserNotAdminWithName(t *testing.T) {
 }
 
 func TestNewClientWithAdminIsAdmin(t *testing.T) {
-	c := oswstest.NewClient("domain", oswstest.WithIsAdmin())
+	c := client.NewClient("domain", client.WithIsAdmin())
 	if !c.IsAdmin() {
 		t.Errorf("Exect an admin user to be admin.")
 	}
@@ -100,7 +100,7 @@ func TestNewClientWithAdminIsAdmin(t *testing.T) {
 
 func TestClientConnectExpectData(t *testing.T) {
 	connection := &fakeWSConnect{}
-	c := oswstest.NewClient("domain", oswstest.WithConnecter(connection))
+	c := client.NewClient("domain", client.WithConnecter(connection))
 
 	if err := c.Connect(); err != nil {
 		t.Errorf("Connect failed: %v", err)
@@ -115,7 +115,7 @@ func TestClientConnectExpectData(t *testing.T) {
 }
 
 func TestClientCloneUserClient(t *testing.T) {
-	c := oswstest.NewClient("domain", oswstest.WithCredentials("myname", "password"))
+	c := client.NewClient("domain", client.WithCredentials("myname", "password"))
 
 	clone := c.Clone(1)
 

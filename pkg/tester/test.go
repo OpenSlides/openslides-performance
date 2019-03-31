@@ -1,15 +1,17 @@
-package oswstest
+package tester
 
 import (
 	"log"
 	"strings"
 	"time"
+
+	"github.com/openslides/openslides-performance/pkg/client"
 )
 
 // RunTests runs some tests for a slice of clients. It returns the result of the all
 // called test as string message.
 // The tests are canceld, when the cancel channel is closed.
-func RunTests(clients []*Client, tests []Tester, cancel <-chan struct{}) (r string) {
+func RunTests(clients []*client.Client, tests []Tester, cancel <-chan struct{}) (r string) {
 	rs := make([]string, 0)
 	defer func() { r = strings.Join(rs, "\n") }()
 
@@ -27,7 +29,7 @@ func RunTests(clients []*Client, tests []Tester, cancel <-chan struct{}) (r stri
 
 // Tester can be tested with a slice of clients.
 type Tester interface {
-	Test([]*Client, <-chan struct{}) string
+	Test([]*client.Client, <-chan struct{}) string
 }
 
 // ConnectTest opens connections for any given client. It measures the time
@@ -39,7 +41,7 @@ type ConnectTest struct {
 }
 
 // Test runs the test for the ConnectTest
-func (t *ConnectTest) Test(clients []*Client, cancel <-chan struct{}) (r string) {
+func (t *ConnectTest) Test(clients []*client.Client, cancel <-chan struct{}) (r string) {
 	log.Println("Start ConnectTest")
 	startTest := time.Now()
 	defer func() { log.Printf("ConnectionTest took %dms", time.Since(startTest)/time.Millisecond) }()
@@ -116,7 +118,7 @@ type OneWriteTest struct {
 }
 
 // Test runs the OneWriteTest
-func (t *OneWriteTest) Test(clients []*Client, cancel <-chan struct{}) (r string) {
+func (t *OneWriteTest) Test(clients []*client.Client, cancel <-chan struct{}) (r string) {
 	log.Println("Start OneWriteTest")
 	startTest := time.Now()
 	defer func() { log.Printf("OneWriteTest took %dms\n", time.Since(startTest)/time.Millisecond) }()
@@ -176,7 +178,7 @@ type ManyWriteTest struct {
 }
 
 // Test runs the ManyWriteTest
-func (t *ManyWriteTest) Test(clients []*Client, cancel <-chan struct{}) (r string) {
+func (t *ManyWriteTest) Test(clients []*client.Client, cancel <-chan struct{}) (r string) {
 	log.Println("Start ManyWriteTest")
 	startTest := time.Now()
 	defer func() { log.Printf("ManyWriteTest took %dms\n", time.Since(startTest)/time.Millisecond) }()
@@ -258,7 +260,7 @@ func (t *ManyWriteTest) Test(clients []*Client, cancel <-chan struct{}) (r strin
 type KeepOpenTest struct{}
 
 // Test runs the KeepOpenTest
-func (t *KeepOpenTest) Test(clients []*Client, cancel <-chan struct{}) (r string) {
+func (t *KeepOpenTest) Test(clients []*client.Client, cancel <-chan struct{}) (r string) {
 	log.Println("Start KeepOpenTest")
 	startTest := time.Now()
 	defer func() { log.Printf("KeepOpenTest took %dms\n", time.Since(startTest)/time.Millisecond) }()
@@ -268,14 +270,12 @@ func (t *KeepOpenTest) Test(clients []*Client, cancel <-chan struct{}) (r string
 	defer close(done)
 
 	// Listen for all clients on the error chan to see when it closes the connection.
-	for _, client := range clients {
-		go func(c *Client, done <-chan struct{}) {
-			select {
-			case <-c.waitForError:
-				errChan <- c.wsError
-			case <-done:
+	for _, c := range clients {
+		go func(c *client.Client, done <-chan struct{}) {
+			if err := c.WaitForError(done); err != nil {
+				errChan <- err
 			}
-		}(client, done)
+		}(c, done)
 	}
 
 	errCounter := 0

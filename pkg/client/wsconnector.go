@@ -1,4 +1,4 @@
-package oswstest
+package client
 
 import (
 	"net/http/cookiejar"
