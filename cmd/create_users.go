@@ -22,7 +22,7 @@ the database.
 Each user is called dummy1, dummy2 etc and has the password "pass".`
 
 func cmdCreateUsers(cfg *config) *cobra.Command {
-	cmd := &cobra.Command{
+	cmd := cobra.Command{
 		Use:   "create_users",
 		Short: "Create a lot of users.",
 		Long:  createUsersHelp,
@@ -73,5 +73,5 @@ func cmdCreateUsers(cfg *config) *cobra.Command {
 		return nil
 	}
 
-	return cmd
+	return &cmd
 }
