@@ -43,7 +43,9 @@ func cmdRoot(cfg *config) *cobra.Command {
 func Execute() error {
 	cfg := new(config)
 	cmd := cmdRoot(cfg)
-	cmd.AddCommand()
+	cmd.AddCommand(
+		cmdCreateUsers(cfg),
+	)
 
 	return cmd.Execute()
 }
