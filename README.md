@@ -24,5 +24,5 @@ go build
 You can see the usage of the command by calling it.
 
 ```
-performance
+openslides-performance
 ```
