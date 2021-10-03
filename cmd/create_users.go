@@ -2,10 +2,11 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/OpenSlides/openslides-performance/client"
 	"github.com/spf13/cobra"
@@ -27,10 +28,11 @@ func cmdCreateUsers(cfg *config) *cobra.Command {
 		Short: "Create a lot of users.",
 		Long:  createUsersHelp,
 	}
-	createUserAmount := cmd.Flags().IntP("amount", "a", 10, "Amount of users to create.")
+	createUserAmount := cmd.Flags().IntP("amount", "n", 10, "Amount of users to create.")
+	meetingID := cmd.Flags().IntP("meeting", "m", 0, "If set, put the user in the delegated group of this meeting.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		ctx, cancel := interruptContext()
 		defer cancel()
 
 		c, err := client.New(cfg.addr())
@@ -42,9 +44,38 @@ func cmdCreateUsers(cfg *config) *cobra.Command {
 			return fmt.Errorf("login client: %w", err)
 		}
 
+		namePrefix := ""
+		extraFields := ""
+		if *meetingID != 0 {
+			groupID, err := delegateGroup(ctx, c, *meetingID)
+			if err != nil {
+				return fmt.Errorf("fetching delegated group: %w", err)
+			}
+
+			namePrefix = fmt.Sprintf("m%d", *meetingID)
+			extraFields = fmt.Sprintf(`
+				"is_present_in_meeting_ids": [%d],
+				"group_$_ids": {"%d":[%d]},
+				`,
+				*meetingID,
+				*meetingID,
+				groupID,
+			)
+		}
+
 		var users []string
 		for i := 0; i < *createUserAmount; i++ {
-			users = append(users, fmt.Sprintf(`{"username":"dummy%d","default_password":"pass","is_active":true}`, i+1))
+			users = append(users, fmt.Sprintf(
+				`{
+					"username": "%sdummy%d",
+					"default_password": "pass",
+					%s
+					"is_active":true
+				}`,
+				namePrefix,
+				i+1,
+				extraFields,
+			))
 		}
 
 		createBody := fmt.Sprintf(
@@ -74,4 +105,51 @@ func cmdCreateUsers(cfg *config) *cobra.Command {
 	}
 
 	return &cmd
+}
+
+func delegateGroup(ctx context.Context, c *client.Client, meetingID int) (int, error) {
+	url := c.Addr() + "/system/autoupdate?single=1"
+	body := fmt.Sprintf(`[{
+			"collection": "meeting",
+			"ids": [%d],
+			"fields":{
+				"group_ids": {
+					"type": "relation-list",
+					"collection": "group",
+					"fields": {
+						"name": null
+					}
+				}
+			}
+		}]`,
+		meetingID,
+	)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, strings.NewReader(body))
+	if err != nil {
+		return 0, fmt.Errorf("building request: %w", err)
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("sending get group request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var keys map[string]json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&keys); err != nil {
+		return 0, fmt.Errorf("parsing response body: %w", err)
+	}
+
+	for k, v := range keys {
+		if string(v) != `"Delegates"` {
+			continue
+		}
+		parts := strings.Split(k, "/")
+		id, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return 0, fmt.Errorf("decoding group id: %w", err)
+		}
+		return id, nil
+	}
+	return 0, fmt.Errorf("can not find group Delegates in meeting %d", meetingID)
 }

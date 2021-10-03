@@ -36,7 +36,17 @@ func New(addr string) (*Client, error) {
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	req.Header.Set("authentication", c.authToken)
 	req.Header.Add("cookie", c.authCookie.String())
+
+	if req.Header.Get("content-type") == "" {
+		req.Header.Set("content-type", "application/json")
+	}
+
 	return checkStatus(c.hc.Do(req))
+}
+
+// Addr returns the basis addr the client was initializes with.
+func (c *Client) Addr() string {
+	return c.addr
 }
 
 // Login uses the username and password to login the client. Sets the returned
