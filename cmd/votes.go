@@ -39,6 +39,7 @@ func cmdVotes(cfg *config) *cobra.Command {
 	pollID := cmd.Flags().IntP("poll_id", "i", 1, "ID of the poll to use.")
 	interrupt := cmd.Flags().Bool("interrupt", false, "Wait for a user input after login.")
 	// choice := cmd.Flags().IntP("choice", "c", 0, "Amount of answers per vote.")
+	voteService := cmd.Flags().Bool("service", false, "Use a standalone vote service on localhost.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := interruptContext()
@@ -80,7 +81,10 @@ func cmdVotes(cfg *config) *cobra.Command {
 
 		start = time.Now()
 		url := "/system/action/handle_request"
-		massVotes(ctx, clients, url, *pollID, optionID)
+		if *voteService {
+			url = "http://localhost:9013/system/vote"
+		}
+		massVotes(ctx, clients, url, *pollID, optionID, *voteService)
 		log.Printf("All Clients have voted in %v", time.Now().Sub(start))
 
 		return nil
@@ -164,8 +168,12 @@ func massLogin(ctx context.Context, clients []*client.Client, meetingID int) {
 	progress.Wait()
 }
 
-func massVotes(ctx context.Context, clients []*client.Client, url string, pollID, optionID int) {
+func massVotes(ctx context.Context, clients []*client.Client, url string, pollID, optionID int, voteService bool) {
 	payloadTmpl := `[{"action": "poll.vote", "data":[{"id": %d, "user_id": %d, "value": {"%d": "Y"}}]}]`
+	var payload string
+	if voteService {
+		payload = fmt.Sprintf(`{"value": {"%d": "Y"}}`, optionID)
+	}
 
 	var wgVote sync.WaitGroup
 	progress := mpb.New(mpb.WithWaitGroup(&wgVote))
@@ -177,9 +185,12 @@ func massVotes(ctx context.Context, clients []*client.Client, url string, pollID
 
 			client := clients[i]
 
-			payload := fmt.Sprintf(payloadTmpl, pollID, client.UserID(), optionID)
+			req, err := http.NewRequest("POST", url+fmt.Sprintf("?id=%d", pollID), strings.NewReader(payload))
+			if !voteService {
+				payload = fmt.Sprintf(payloadTmpl, pollID, client.UserID(), optionID)
+				req, err = http.NewRequest("POST", url, strings.NewReader(payload))
+			}
 
-			req, err := http.NewRequest("POST", url, strings.NewReader(payload))
 			if err != nil {
 				log.Printf("Error creating request: %v", err)
 				return
