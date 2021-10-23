@@ -3,26 +3,30 @@ package client
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
 // Client holds the connection to the OpenSlides server.
 type Client struct {
-	addr string
-	hc   *http.Client
+	addr       string
+	httpClient *http.Client
 
 	authCookie *http.Cookie
 	authToken  string
+	userID     int
 }
 
 // New initializes a new client.
 func New(addr string) (*Client, error) {
 	c := Client{
 		addr: addr,
-		hc: &http.Client{
+		httpClient: &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			},
@@ -41,12 +45,16 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		req.Header.Set("content-type", "application/json")
 	}
 
-	return checkStatus(c.hc.Do(req))
-}
+	if req.URL.Host == "" {
+		base, err := url.Parse(c.addr)
+		if err != nil {
+			return nil, fmt.Errorf("parsing base url: %w", err)
+		}
 
-// Addr returns the basis addr the client was initializes with.
-func (c *Client) Addr() string {
-	return c.addr
+		req.URL = base.ResolveReference(req.URL)
+	}
+
+	return checkStatus(c.httpClient.Do(req))
 }
 
 // Login uses the username and password to login the client. Sets the returned
@@ -61,7 +69,7 @@ func (c *Client) Login(ctx context.Context, username, password string) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := checkStatus(c.hc.Do(req))
+	resp, err := checkStatus(c.httpClient.Do(req))
 	if err != nil {
 		return fmt.Errorf("sending login request: %w", err)
 	}
@@ -74,7 +82,39 @@ func (c *Client) Login(ctx context.Context, username, password string) error {
 			break
 		}
 	}
+
+	id, err := decodeUserID(c.authToken)
+	if err != nil {
+		return fmt.Errorf("decoding user id from auth token: %w", err)
+	}
+
+	c.userID = id
 	return nil
+}
+
+// decodeUserID returns the user id from a jwt token.
+//
+// It does not validate the token.
+func decodeUserID(token string) (int, error) {
+	parts := strings.Split(token, ".")
+	encoded, err := base64.RawStdEncoding.DecodeString(parts[1])
+	if err != nil {
+		return 0, fmt.Errorf("decoding jtw token %q: %w", parts[1], err)
+	}
+
+	var data struct {
+		UserID int `json:"userId"`
+	}
+	if err := json.Unmarshal(encoded, &data); err != nil {
+		return 0, fmt.Errorf("decoding user_id: %w", err)
+	}
+
+	return data.UserID, nil
+}
+
+// UserID returns the userID of the client.
+func (c *Client) UserID() int {
+	return c.userID
 }
 
 // checkStatus is a helper that can be used around http.Do().
@@ -82,7 +122,7 @@ func (c *Client) Login(ctx context.Context, username, password string) error {
 // It checks, that the returned status code in the 200er range.
 func checkStatus(resp *http.Response, err error) (*http.Response, error) {
 	if err != nil {
-		return nil, fmt.Errorf("sending login request: %w", err)
+		return nil, err
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {

@@ -89,7 +89,7 @@ func cmdCreateUsers(cfg *config) *cobra.Command {
 		req, err := http.NewRequestWithContext(
 			ctx,
 			"POST",
-			cfg.addr()+"/system/action/handle_request",
+			"/system/action/handle_request",
 			strings.NewReader(createBody),
 		)
 		if err != nil {
@@ -108,7 +108,7 @@ func cmdCreateUsers(cfg *config) *cobra.Command {
 }
 
 func delegateGroup(ctx context.Context, c *client.Client, meetingID int) (int, error) {
-	url := c.Addr() + "/system/autoupdate?single=1"
+	url := "/system/autoupdate?single=1"
 	body := fmt.Sprintf(`[{
 			"collection": "meeting",
 			"ids": [%d],
