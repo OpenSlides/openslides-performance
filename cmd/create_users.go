@@ -10,6 +10,7 @@ import (
 
 	"github.com/OpenSlides/openslides-performance/client"
 	"github.com/spf13/cobra"
+	"github.com/vbauerster/mpb/v7"
 )
 
 const createUsersHelp = `Creates many users
@@ -30,6 +31,7 @@ func cmdCreateUsers(cfg *config) *cobra.Command {
 	}
 	createUserAmount := cmd.Flags().IntP("amount", "n", 10, "Amount of users to create.")
 	meetingID := cmd.Flags().IntP("meeting", "m", 0, "If set, put the user in the delegated group of this meeting.")
+	batch := cmd.Flags().IntP("batch", "b", 0, "Number of users to create with one request. Default is all at once.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := interruptContext()
@@ -63,42 +65,55 @@ func cmdCreateUsers(cfg *config) *cobra.Command {
 			)
 		}
 
-		var users []string
-		for i := 0; i < *createUserAmount; i++ {
-			users = append(users, fmt.Sprintf(
-				`{
+		batchCount := 1
+		if *batch != 0 {
+			batchCount = *createUserAmount / *batch
+		}
+
+		progress := mpb.New()
+		userBar := progress.AddBar(int64(*createUserAmount))
+
+		for b := 0; b < batchCount; b++ {
+			// TODO: Fix case that createUserAmout is not a multiple of batch
+			var users []string
+			for i := 0; i < *batch; i++ {
+				userID := b*(*batch) + i + 1
+				users = append(users, fmt.Sprintf(
+					`{
 					"username": "%sdummy%d",
 					"default_password": "pass",
 					%s
 					"is_active":true
 				}`,
-				namePrefix,
-				i+1,
-				extraFields,
-			))
-		}
+					namePrefix,
+					userID,
+					extraFields,
+				))
+			}
 
-		createBody := fmt.Sprintf(
-			`[{
+			createBody := fmt.Sprintf(
+				`[{
 				"action": "user.create",
 				"data": [%s]
 			}]`,
-			strings.Join(users, ","),
-		)
+				strings.Join(users, ","),
+			)
 
-		req, err := http.NewRequestWithContext(
-			ctx,
-			"POST",
-			"/system/action/handle_request",
-			strings.NewReader(createBody),
-		)
-		if err != nil {
-			return fmt.Errorf("creating request: %w", err)
-		}
-		req.Header.Set("Content-Type", "application/json")
+			req, err := http.NewRequestWithContext(
+				ctx,
+				"POST",
+				"/system/action/handle_request",
+				strings.NewReader(createBody),
+			)
+			if err != nil {
+				return fmt.Errorf("creating request: %w", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
 
-		if _, err := c.Do(req); err != nil {
-			return fmt.Errorf("sending request: %w", err)
+			if _, err := c.Do(req); err != nil {
+				return fmt.Errorf("sending request: %w", err)
+			}
+			userBar.IncrBy(*batch)
 		}
 
 		return nil
