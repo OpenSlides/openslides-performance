@@ -39,7 +39,6 @@ func cmdVotes(cfg *config) *cobra.Command {
 	pollID := cmd.Flags().IntP("poll_id", "i", 1, "ID of the poll to use.")
 	interrupt := cmd.Flags().Bool("interrupt", false, "Wait for a user input after login.")
 	// choice := cmd.Flags().IntP("choice", "c", 0, "Amount of answers per vote.")
-	voteService := cmd.Flags().Bool("service", false, "Use a standalone vote service on localhost.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := interruptContext()
@@ -80,11 +79,8 @@ func cmdVotes(cfg *config) *cobra.Command {
 		}
 
 		start = time.Now()
-		url := "/system/action/handle_request"
-		if *voteService {
-			url = "http://localhost:9013/system/vote"
-		}
-		massVotes(ctx, clients, url, *pollID, optionID, *voteService)
+		url := "/system/vote"
+		massVotes(ctx, clients, url, *pollID, optionID)
 		log.Printf("All Clients have voted in %v", time.Now().Sub(start))
 
 		return nil
@@ -102,23 +98,23 @@ func pollData(ctx context.Context, client *client.Client, pollID int) (meetingID
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, 0, fmt.Errorf("getting responce: %w", err)
+		return 0, 0, fmt.Errorf("getting response: %w", err)
 	}
 	defer resp.Body.Close()
 
 	var data map[string]json.RawMessage
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return 0, 0, fmt.Errorf("decoding responce body: %w", err)
+		return 0, 0, fmt.Errorf("decoding response body: %w", err)
 	}
 
 	rawMeetingID, ok := data[fmt.Sprintf("poll/%d/meeting_id", pollID)]
 	if !ok {
-		return 0, 0, fmt.Errorf("meeting_id not in responce, got %v", dataKeys(data))
+		return 0, 0, fmt.Errorf("meeting_id not in response, got %v", dataKeys(data))
 	}
 
 	rawOptionIDs, ok := data[fmt.Sprintf("poll/%d/option_ids", pollID)]
 	if !ok {
-		return 0, 0, fmt.Errorf("option_ids not in responce, got %v", dataKeys(data))
+		return 0, 0, fmt.Errorf("option_ids not in response, got %v", dataKeys(data))
 	}
 
 	if err := json.Unmarshal(rawMeetingID, &meetingID); err != nil {
@@ -168,12 +164,8 @@ func massLogin(ctx context.Context, clients []*client.Client, meetingID int) {
 	progress.Wait()
 }
 
-func massVotes(ctx context.Context, clients []*client.Client, url string, pollID, optionID int, voteService bool) {
-	payloadTmpl := `[{"action": "poll.vote", "data":[{"id": %d, "user_id": %d, "value": {"%d": "Y"}}]}]`
-	var payload string
-	if voteService {
-		payload = fmt.Sprintf(`{"value": {"%d": "Y"}}`, optionID)
-	}
+func massVotes(ctx context.Context, clients []*client.Client, url string, pollID, optionID int) {
+	payload := fmt.Sprintf(`{"value": {"%d": "Y"}}`, optionID)
 
 	var wgVote sync.WaitGroup
 	progress := mpb.New(mpb.WithWaitGroup(&wgVote))
@@ -184,13 +176,7 @@ func massVotes(ctx context.Context, clients []*client.Client, url string, pollID
 			defer wgVote.Done()
 
 			client := clients[i]
-
 			req, err := http.NewRequest("POST", url+fmt.Sprintf("?id=%d", pollID), strings.NewReader(payload))
-			if !voteService {
-				payload = fmt.Sprintf(payloadTmpl, pollID, client.UserID(), optionID)
-				req, err = http.NewRequest("POST", url, strings.NewReader(payload))
-			}
-
 			if err != nil {
 				log.Printf("Error creating request: %v", err)
 				return

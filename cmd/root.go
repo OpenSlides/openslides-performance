@@ -51,6 +51,7 @@ func Execute() error {
 		cmdCreateUsers(cfg),
 		cmdConnect(cfg),
 		cmdVotes(cfg),
+		cmdRequest(cfg),
 	)
 
 	return cmd.Execute()
