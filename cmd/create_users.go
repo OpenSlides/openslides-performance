@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -65,10 +66,11 @@ func cmdCreateUsers(cfg *config) *cobra.Command {
 			)
 		}
 
-		batchCount := 1
-		if *batch != 0 {
-			batchCount = *createUserAmount / *batch
+		if *batch == 0 {
+			*batch = *createUserAmount
 		}
+
+		batchCount := *createUserAmount / *batch
 
 		progress := mpb.New()
 		userBar := progress.AddBar(int64(*createUserAmount))
@@ -98,6 +100,8 @@ func cmdCreateUsers(cfg *config) *cobra.Command {
 			}]`,
 				strings.Join(users, ","),
 			)
+
+			log.Println(createBody)
 
 			req, err := http.NewRequestWithContext(
 				ctx,
