@@ -46,6 +46,10 @@ func cmdRequest(cfg *config) *cobra.Command {
 			body = strings.NewReader(*data)
 		}
 
+		if len(args) == 0 {
+			return fmt.Errorf("No url given")
+		}
+
 		req, err := http.NewRequestWithContext(ctx, method, args[0], body)
 		if err != nil {
 			return fmt.Errorf("creating request: %w", err)
