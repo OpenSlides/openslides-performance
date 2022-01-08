@@ -74,6 +74,7 @@ func (c *Client) Login(ctx context.Context, username, password string) error {
 		return fmt.Errorf("sending login request: %w", err)
 	}
 	defer resp.Body.Close()
+	io.ReadAll(resp.Body)
 
 	c.authToken = resp.Header.Get("authentication")
 	for _, cookie := range resp.Cookies() {
