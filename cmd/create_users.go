@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -100,8 +99,6 @@ func cmdCreateUsers(cfg *config) *cobra.Command {
 			}]`,
 				strings.Join(users, ","),
 			)
-
-			log.Println(createBody)
 
 			req, err := http.NewRequestWithContext(
 				ctx,
