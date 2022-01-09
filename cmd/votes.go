@@ -41,7 +41,7 @@ func cmdVotes(cfg *config) *cobra.Command {
 	amount := cmd.Flags().IntP("amount", "n", 10, "Amount of users to use.")
 	pollID := cmd.Flags().IntP("poll_id", "i", 1, "ID of the poll to use.")
 	interrupt := cmd.Flags().Bool("interrupt", false, "Wait for a user input after login.")
-	loop := cmd.Flags().Bool("loop", false, "After the test, start it again with the logged in users.")
+	useLoop := cmd.Flags().Bool("loop", false, "After the test, start it again with the logged in users.")
 	// choice := cmd.Flags().IntP("choice", "c", 0, "Amount of answers per vote.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -75,8 +75,12 @@ func cmdVotes(cfg *config) *cobra.Command {
 		massLogin(ctx, clients, meetingID)
 		log.Printf("All clients logged in %v", time.Now().Sub(start))
 
-		for *loop {
-			if *interrupt || *loop {
+		first := true
+
+		for first || *useLoop {
+			first = false
+
+			if *interrupt || *useLoop {
 				reader := bufio.NewReader(os.Stdin)
 				fmt.Println("Hit enter to continue")
 				reader.ReadString('\n')
