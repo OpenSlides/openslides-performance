@@ -3,6 +3,7 @@ module github.com/OpenSlides/openslides-performance
 go 1.17
 
 require (
+	github.com/google/uuid v1.3.0
 	github.com/spf13/cobra v1.2.1
 	github.com/vbauerster/mpb/v7 v7.1.5
 )
