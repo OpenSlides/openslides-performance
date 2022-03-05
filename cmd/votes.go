@@ -163,8 +163,10 @@ func massLogin(ctx context.Context, clients []*client.Client, meetingID int) {
 
 			client := clients[i]
 
-			if err := client.Login(ctx, fmt.Sprintf("m%ddummy%d", meetingID, i+1), "pass"); err != nil {
-				log.Printf("Login failed: %v", err)
+			username := fmt.Sprintf("m%ddummy%d", meetingID, i+1)
+
+			if err := client.Login(ctx, username, "pass"); err != nil {
+				log.Printf("Login failed for user %s: %v", username, err)
 				return
 			}
 
