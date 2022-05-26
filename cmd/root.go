@@ -53,6 +53,7 @@ func Execute() error {
 		cmdVotes(cfg),
 		cmdRequest(cfg),
 		cmdBackendAction(cfg),
+		cmdWork(cfg),
 	)
 
 	return cmd.Execute()

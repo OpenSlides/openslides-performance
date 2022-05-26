@@ -15,6 +15,8 @@ import (
 
 const backendActionHelp = `Call an action in the backend multiple times.
 
+All actions are send to the backend in one request.
+
 In the action content \i is replaced with a number between 1 and amount.
 
 \u is replaced with a random uuid.
