@@ -15,7 +15,11 @@ import (
 
 const rworkHelp = `Generates background work on the server
 
-Creates a lot of topics in one meeting and toggels the done status forever.`
+It uses different strategie to create the load. The strategie can
+be set via the argument --strategy which is a string. Possible strategies are:
+
+* topic-done: sets the done status of a topic to true and false
+* motion-state: sets the state of a motion to 2 and then resets it`
 
 func cmdWork(cfg *config) *cobra.Command {
 	cmd := cobra.Command{
@@ -26,6 +30,7 @@ func cmdWork(cfg *config) *cobra.Command {
 
 	meetingID := cmd.Flags().IntP("meeting", "m", 1, "MeetingID to use")
 	amount := cmd.Flags().IntP("amount", "n", 10, "Amount of workers to use.")
+	strategy := cmd.Flags().StringP("strategy", "s", "topic-done", "Strategy for the background tasks")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := interruptContext()
@@ -34,7 +39,24 @@ func cmdWork(cfg *config) *cobra.Command {
 		eg, ctx := errgroup.WithContext(ctx)
 		for i := 0; i < *amount; i++ {
 			eg.Go(func() error {
-				return work(ctx, cfg, *meetingID)
+				c, err := client.New(cfg.addr())
+				if err != nil {
+					return fmt.Errorf("creating client: %w", err)
+				}
+
+				if err := c.Login(ctx, cfg.username, cfg.password); err != nil {
+					return fmt.Errorf("login client: %w", err)
+				}
+
+				f := topicDone
+				switch *strategy {
+				case "topic-done":
+					f = topicDone
+				case "motion-state":
+					f = motionState
+				}
+
+				return f(ctx, c, *meetingID)
 			})
 		}
 
@@ -44,28 +66,118 @@ func cmdWork(cfg *config) *cobra.Command {
 	return &cmd
 }
 
-func work(ctx context.Context, cfg *config, meetingID int) (err error) {
-	c, err := client.New(cfg.addr())
+func motionState(ctx context.Context, client *client.Client, meetingID int) (err error) {
+	motionID, err := createWorkerMotion(ctx, client, meetingID)
 	if err != nil {
-		return fmt.Errorf("creating client: %w", err)
+		return fmt.Errorf("creating motion: %w", err)
 	}
 
-	if err := c.Login(ctx, cfg.username, cfg.password); err != nil {
-		return fmt.Errorf("login client: %w", err)
+	defer func() {
+		deleteErr := deleteWorkerMotion(context.Background(), client, motionID)
+		if err == nil && deleteErr != nil {
+			err = fmt.Errorf("deleting motion: %w", err)
+		}
+	}()
+
+	if err := toggleWorkerMotion(ctx, client, motionID); err != nil {
+		return fmt.Errorf("toggle motion: %w", err)
 	}
 
-	topicID, err := createWorkerTopic(ctx, c, meetingID)
+	return nil
+}
+
+func createWorkerMotion(ctx context.Context, client *client.Client, meetingID int) (int, error) {
+	body := fmt.Sprintf(
+		`[{"action":"motion.create","data":[{"meeting_id":%d,"title":"worker-motion","text":"<p>dummy</p>","workflow_id":1}]}]`,
+		meetingID,
+	)
+
+	var respBody struct {
+		Success bool `json:"success"`
+		Results [][]struct {
+			MotionID int `json:"id"`
+		} `json:"results"`
+	}
+
+	if err := backendAction(ctx, client, body, &respBody); err != nil {
+		return 0, fmt.Errorf("sending action to backend: %w", err)
+	}
+
+	if !respBody.Success {
+		return 0, fmt.Errorf("backend returned no success")
+	}
+
+	return respBody.Results[0][0].MotionID, nil
+}
+
+func toggleWorkerMotion(ctx context.Context, client *client.Client, motionID int) error {
+	toggleState := false
+	for {
+		body := fmt.Sprintf(
+			`[{"action":"motion.set_state","data":[{"id":%d,"state_id":2}]}]`,
+			motionID,
+		)
+		if toggleState {
+			body = fmt.Sprintf(
+				`[{"action":"motion.reset_state","data":[{"id":%d}]}]`,
+				motionID,
+			)
+		}
+
+		var respBody struct {
+			Success bool `json:"success"`
+		}
+
+		if err := backendAction(ctx, client, body, &respBody); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
+			return fmt.Errorf("sending action to backend: %w", err)
+		}
+
+		if !respBody.Success {
+			return fmt.Errorf("backend returned no success")
+		}
+
+		toggleState = !toggleState
+	}
+}
+
+func deleteWorkerMotion(ctx context.Context, client *client.Client, motionID int) error {
+	body := fmt.Sprintf(
+		`[{"action":"motion.delete","data":[{"id":%d}]}]`,
+		motionID,
+	)
+
+	var respBody struct {
+		Success bool `json:"success"`
+	}
+
+	if err := backendAction(ctx, client, body, &respBody); err != nil {
+		return fmt.Errorf("sending action to backend: %w", err)
+	}
+
+	if !respBody.Success {
+		return fmt.Errorf("backend returned no success")
+	}
+
+	return nil
+}
+
+func topicDone(ctx context.Context, client *client.Client, meetingID int) (err error) {
+	topicID, err := createWorkerTopic(ctx, client, meetingID)
 	if err != nil {
 		return fmt.Errorf("creating topic: %w", err)
 	}
+
 	defer func() {
-		deleteErr := deleteWorkerTopic(context.Background(), c, topicID)
+		deleteErr := deleteWorkerTopic(context.Background(), client, topicID)
 		if err == nil && deleteErr != nil {
 			err = fmt.Errorf("deleting topic: %w", err)
 		}
 	}()
 
-	if err := toggleWorkerTopic(ctx, c, topicID); err != nil {
+	if err := toggleWorkerTopic(ctx, client, topicID); err != nil {
 		return fmt.Errorf("toggle topic: %w", err)
 	}
 
