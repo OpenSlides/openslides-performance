@@ -55,7 +55,7 @@ func cmdConnect(cfg *config) *cobra.Command {
 
 		for i := 0; i < *connectionCount; i++ {
 			go func(i int) {
-				r, err := keepOpen(c, "/system/autoupdate", strings.NewReader(*autoupdateBody))
+				r, err := keepOpen(ctx, c, "/system/autoupdate", strings.NewReader(*autoupdateBody))
 				if err != nil {
 					log.Printf("Can not send request %d: %v", i, err)
 					return
@@ -108,15 +108,15 @@ func cmdConnect(cfg *config) *cobra.Command {
 	return &cmd
 }
 
-func keepOpen(c *client.Client, path string, body io.Reader) (io.ReadCloser, error) {
-	req, err := http.NewRequest("GET", path, body)
+func keepOpen(ctx context.Context, c *client.Client, path string, body io.Reader) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", path, body)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
 	resp, err := c.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("sending %s request: %w", path, err)
+		return nil, fmt.Errorf("sending request to %s: %w", path, err)
 	}
 	return resp.Body, nil
 }
