@@ -6,7 +6,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/spf13/cobra v1.4.0
 	github.com/vbauerster/mpb/v7 v7.4.2
-	golang.org/x/sync v0.0.0-20220513210516-0976fa681c29
+	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f
 )
 
 require (

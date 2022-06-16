@@ -87,7 +87,7 @@ func cmdVotes(cfg *config) *cobra.Command {
 				log.Println("Starting voting")
 			}
 
-			start = time.Now()
+			start := time.Now()
 			url := "/system/vote"
 			massVotes(ctx, clients, url, *pollID, optionID)
 			log.Printf("All Clients have voted in %v", time.Now().Sub(start))
