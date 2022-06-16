@@ -37,7 +37,7 @@ func cmdBackendAction(cfg *config) *cobra.Command {
 		ctx, cancel := interruptContext()
 		defer cancel()
 
-		c, err := client.New(cfg.addr())
+		c, err := client.New(cfg.addr(), cfg.forceIPv4)
 		if err != nil {
 			return fmt.Errorf("creating client: %w", err)
 		}

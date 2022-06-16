@@ -39,7 +39,7 @@ func cmdWork(cfg *config) *cobra.Command {
 		eg, ctx := errgroup.WithContext(ctx)
 		for i := 0; i < *amount; i++ {
 			eg.Go(func() error {
-				c, err := client.New(cfg.addr())
+				c, err := client.New(cfg.addr(), cfg.forceIPv4)
 				if err != nil {
 					return fmt.Errorf("creating client: %w", err)
 				}

@@ -13,10 +13,11 @@ const rootHelp = `Performance is an helper tool to test the limits of OpenSlies.
 Each task is implemented as a subcommand.`
 
 type config struct {
-	domain   string
-	username string
-	password string
-	http     bool
+	domain    string
+	username  string
+	password  string
+	http      bool
+	forceIPv4 bool
 }
 
 func (c *config) addr() string {
@@ -39,6 +40,7 @@ func cmdRoot(cfg *config) *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&cfg.username, "username", "u", "admin", "Username that can create the users.")
 	cmd.PersistentFlags().StringVarP(&cfg.password, "password", "p", "admin", "Password to use.")
 	cmd.PersistentFlags().BoolVar(&cfg.http, "http", false, "Use http instead of https. Default is https.")
+	cmd.PersistentFlags().BoolVar(&cfg.forceIPv4, "4", false, "Force IPv4")
 
 	return cmd
 }

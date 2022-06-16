@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -23,12 +24,21 @@ type Client struct {
 }
 
 // New initializes a new client.
-func New(addr string) (*Client, error) {
+func New(addr string, forceIPv4 bool) (*Client, error) {
+	var dialContext func(ctx context.Context, network, addr string) (net.Conn, error)
+	if forceIPv4 {
+		var zeroDialer net.Dialer
+		dialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return zeroDialer.DialContext(ctx, "tcp4", addr)
+		}
+	}
+
 	c := Client{
 		addr: addr,
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				DialContext:     dialContext,
 			},
 		},
 	}
