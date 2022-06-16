@@ -48,7 +48,7 @@ func cmdVotes(cfg *config) *cobra.Command {
 		ctx, cancel := interruptContext()
 		defer cancel()
 
-		admin, err := client.New(cfg.addr())
+		admin, err := client.New(cfg.addr(), cfg.forceIPv4)
 		if err != nil {
 			return fmt.Errorf("create admin user: %w", err)
 		}
@@ -63,7 +63,7 @@ func cmdVotes(cfg *config) *cobra.Command {
 
 		var clients []*client.Client
 		for i := 0; i < *amount; i++ {
-			c, err := client.New(cfg.addr())
+			c, err := client.New(cfg.addr(), cfg.forceIPv4)
 			if err != nil {
 				return fmt.Errorf("creating client: %w", err)
 			}
