@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/OpenSlides/openslides-performance/client"
 	"github.com/spf13/cobra"
@@ -55,10 +56,23 @@ func cmdConnect(cfg *config) *cobra.Command {
 
 		for i := 0; i < *connectionCount; i++ {
 			go func(i int) {
-				r, err := keepOpen(ctx, c, "/system/autoupdate", strings.NewReader(*autoupdateBody))
-				if err != nil {
-					log.Printf("Can not send request %d: %v", i, err)
-					return
+				var r io.ReadCloser
+				for tries := 0; ; tries++ {
+					if tries > 100 {
+						return
+					}
+
+					r, err = keepOpen(ctx, c, "/system/autoupdate?compress=1", strings.NewReader(*autoupdateBody))
+					if err != nil {
+						if ctx.Err() != nil {
+							return
+						}
+
+						log.Printf("Can not send request %d: %v", i, err)
+						time.Sleep(time.Second)
+						continue
+					}
+					break
 				}
 				defer r.Close()
 
