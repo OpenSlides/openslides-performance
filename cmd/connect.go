@@ -37,7 +37,7 @@ func cmdConnect(cfg *config) *cobra.Command {
 		`[{"collection":"organization","ids":[1],"fields":{"committee_ids":{"type":"relation-list","collection":"committee","fields":{"name":null}}}}]`,
 		"Amount of users to use.",
 	)
-	skipFirst := cmd.Flags().Bool("skip_first", false, "Use skip first flag to save traffic")
+	skipFirst := cmd.Flags().Bool("skip-first", false, "Use skip first flag to save traffic")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := interruptContext()
