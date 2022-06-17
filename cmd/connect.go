@@ -37,6 +37,7 @@ func cmdConnect(cfg *config) *cobra.Command {
 		`[{"collection":"organization","ids":[1],"fields":{"committee_ids":{"type":"relation-list","collection":"committee","fields":{"name":null}}}}]`,
 		"Amount of users to use.",
 	)
+	skipFirst := cmd.Flags().Bool("skip_first", false, "Use skip first flag to save traffic")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := interruptContext()
@@ -62,7 +63,12 @@ func cmdConnect(cfg *config) *cobra.Command {
 						return
 					}
 
-					r, err = keepOpen(ctx, c, "/system/autoupdate?compress=1", strings.NewReader(*autoupdateBody))
+					skipFirstAttr := ""
+					if *skipFirst {
+						skipFirstAttr = "&skip_first=1"
+					}
+
+					r, err = keepOpen(ctx, c, "/system/autoupdate?compress=1"+skipFirstAttr, strings.NewReader(*autoupdateBody))
 					if err != nil {
 						if ctx.Err() != nil {
 							return
