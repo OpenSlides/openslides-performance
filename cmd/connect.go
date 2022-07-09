@@ -122,7 +122,6 @@ func cmdConnect(cfg *config) *cobra.Command {
 				bar.Increment()
 			}
 		}
-
 	}
 
 	return &cmd

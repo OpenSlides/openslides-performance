@@ -56,6 +56,7 @@ func Execute() error {
 		cmdRequest(cfg),
 		cmdBackendAction(cfg),
 		cmdWork(cfg),
+		cmdBrowser(cfg),
 	)
 
 	return cmd.Execute()
