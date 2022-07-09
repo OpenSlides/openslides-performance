@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // Client holds the connection to the OpenSlides server.
@@ -79,7 +80,14 @@ func (c *Client) Login(ctx context.Context, username, password string) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := checkStatus(c.httpClient.Do(req))
+	var resp *http.Response
+	for retry := 0; retry < 100; retry++ {
+		resp, err = checkStatus(c.httpClient.Do(req))
+		if err == nil {
+			break
+		}
+		time.Sleep(time.Second)
+	}
 	if err != nil {
 		return fmt.Errorf("sending login request: %w", err)
 	}
