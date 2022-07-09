@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -83,10 +84,15 @@ func (c *Client) Login(ctx context.Context, username, password string) error {
 	var resp *http.Response
 	for retry := 0; retry < 100; retry++ {
 		resp, err = checkStatus(c.httpClient.Do(req))
-		if err == nil {
-			break
+		if err != nil {
+			var errStatus StatusError
+			if errors.As(err, &errStatus) {
+				break
+			}
+			time.Sleep(time.Second)
+			continue
 		}
-		time.Sleep(time.Second)
+		break
 	}
 	if err != nil {
 		return fmt.Errorf("sending login request: %w", err)
@@ -150,7 +156,17 @@ func checkStatus(resp *http.Response, err error) (*http.Response, error) {
 			body = []byte("[can not read body]")
 		}
 		resp.Body.Close()
-		return nil, fmt.Errorf("got status %s: %s", resp.Status, body)
+		return nil, StatusError{resp.StatusCode, body}
 	}
 	return resp, nil
+}
+
+// StatusError is an error for an http status code other then 200.
+type StatusError struct {
+	Status int
+	Body   []byte
+}
+
+func (err StatusError) Error() string {
+	return fmt.Sprintf("got status %s: %s", http.StatusText(err.Status), err.Body)
 }
