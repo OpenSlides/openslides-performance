@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -16,11 +20,11 @@ const browserHelp = `Simulates a browser
 The browser command consts of two sub commands. 'record' and 'replay'.
 
 'record' opens a local proxy. All requests to openslides are printed to 
-stdout. Only login requests are ignored. To do so, a self singed certificate
-is created.
+stdout. To do so, a self singed certificate is created.
 
 'replay' creates connections to OpenSlides by reading them from stdin.
 Each connection is created many times either with the same user or with different users.
+Login requests are ignored.
 
 Both commands can be used together. In this case a click in the (real) browser
 is sent to OpenSlides many times:
@@ -83,12 +87,6 @@ func cmdBrowserReplay(cfg *config) *cobra.Command {
 }
 
 func startProxy(ctx context.Context, remoteAddr string, localPort int) error {
-	// TODO:	self singed cert
-	//			print incomming
-	//			proxy but not print login
-	//			Handle shutdown
-
-	addr := fmt.Sprintf(":%d", localPort)
 	target, err := url.Parse(remoteAddr)
 	if err != nil {
 		return fmt.Errorf("parse url: %w", err)
@@ -98,8 +96,73 @@ func startProxy(ctx context.Context, remoteAddr string, localPort int) error {
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	proxy.FlushInterval = -1
+	origDirector := proxy.Director
+	proxy.Director = func(r *http.Request) {
+		origDirector(r)
+		var body []byte
+		if r.Body != nil {
+			body, _ = io.ReadAll(r.Body)
+			r.Body = ioutil.NopCloser(bytes.NewReader(body))
+			dst := new(bytes.Buffer)
+			if err := json.Compact(dst, body); err == nil {
+				body = dst.Bytes()
+			}
+		}
+		if bytes.Contains(body, []byte("\n")) {
+			fmt.Printf("request with newline: %s", r.URL.RequestURI())
+			return
+		}
+		fmt.Printf("request: %s %s\n", r.URL.RequestURI(), body)
+	}
 
-	http.ListenAndServe(addr, proxy)
+	cert, err := selfSingedCert()
+	if err != nil {
+		return fmt.Errorf("getting cert: %w", err)
+	}
+
+	srv := &http.Server{
+		Addr:    fmt.Sprintf(":%d", localPort),
+		Handler: proxy,
+		TLSConfig: &tls.Config{
+			Certificates: []tls.Certificate{cert},
+		},
+	}
+
+	wait := make(chan error)
+	go func() {
+		<-ctx.Done()
+		if err := srv.Shutdown(context.Background()); err != nil {
+			wait <- fmt.Errorf("HTTP Proxy shutdown: %w", err)
+			return
+		}
+		wait <- nil
+	}()
+
+	fmt.Printf("Listen on: '%s'\n", srv.Addr)
+	if err := srv.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
+		return fmt.Errorf("HTTP Proxy failed: %v", err)
+	}
 
 	return nil
+}
+
+func selfSingedCert() (tls.Certificate, error) {
+	certPem := []byte(`-----BEGIN CERTIFICATE-----
+MIIBhTCCASugAwIBAgIQIRi6zePL6mKjOipn+dNuaTAKBggqhkjOPQQDAjASMRAw
+DgYDVQQKEwdBY21lIENvMB4XDTE3MTAyMDE5NDMwNloXDTE4MTAyMDE5NDMwNlow
+EjEQMA4GA1UEChMHQWNtZSBDbzBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABD0d
+7VNhbWvZLWPuj/RtHFjvtJBEwOkhbN/BnnE8rnZR8+sbwnc/KhCk3FhnpHZnQz7B
+5aETbbIgmuvewdjvSBSjYzBhMA4GA1UdDwEB/wQEAwICpDATBgNVHSUEDDAKBggr
+BgEFBQcDATAPBgNVHRMBAf8EBTADAQH/MCkGA1UdEQQiMCCCDmxvY2FsaG9zdDo1
+NDUzgg4xMjcuMC4wLjE6NTQ1MzAKBggqhkjOPQQDAgNIADBFAiEA2zpJEPQyz6/l
+Wf86aX6PepsntZv2GYlA5UpabfT2EZICICpJ5h/iI+i341gBmLiAFQOyTDT+/wQc
+6MF9+Yw1Yy0t
+-----END CERTIFICATE-----`)
+	keyPem := []byte(`-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIIrYSSNQFaA2Hwf1duRSxKtLYX5CB04fSeQ6tF1aY/PuoAoGCCqGSM49
+AwEHoUQDQgAEPR3tU2Fta9ktY+6P9G0cWO+0kETA6SFs38GecTyudlHz6xvCdz8q
+EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
+-----END EC PRIVATE KEY-----`)
+
+	return tls.X509KeyPair(certPem, keyPem)
 }
