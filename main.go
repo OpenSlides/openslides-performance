@@ -10,16 +10,11 @@ import (
 
 	"github.com/OpenSlides/openslides-performance/backendaction"
 	"github.com/OpenSlides/openslides-performance/connect"
+	"github.com/OpenSlides/openslides-performance/createusers"
 	"github.com/OpenSlides/openslides-performance/internal/config"
 	"github.com/OpenSlides/openslides-performance/request"
 	"github.com/alecthomas/kong"
 )
-
-// func main() {
-// 	if err := cmd.Execute(); err != nil {
-// 		os.Exit(1)
-// 	}
-// }
 
 func main() {
 	ctx, cancel := interruptContext()
@@ -58,5 +53,6 @@ var cli struct {
 
 	BackendAction backendaction.Options `cmd:"" help:"Calls a backend action multiple times."`
 	Connect       connect.Options       `cmd:"" help:"Opens many connections to autoupdate and keeps them open."`
+	CreateUsers   createusers.Options   `cmd:"" help:"Create many users."`
 	Request       request.Options       `cmd:"" help:"Sends a logged-in request to OpenSlides."`
 }
