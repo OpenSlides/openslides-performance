@@ -73,6 +73,12 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 // Login uses the username and password to login the client. Sets the returned
 // cookie for later requests.
 func (c *Client) Login(ctx context.Context) error {
+	return c.LoginWithCredentials(ctx, c.cfg.Username, c.cfg.Password)
+}
+
+// LoginWithCredentials is like Login but uses the given credentials instead of
+// config.
+func (c *Client) LoginWithCredentials(ctx context.Context, username, password string) error {
 	url := c.cfg.Addr() + "/system/auth/login"
 	payload := fmt.Sprintf(`{"username": "%s", "password": "%s"}`, c.cfg.Username, c.cfg.Password)
 

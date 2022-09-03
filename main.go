@@ -13,6 +13,7 @@ import (
 	"github.com/OpenSlides/openslides-performance/createusers"
 	"github.com/OpenSlides/openslides-performance/internal/config"
 	"github.com/OpenSlides/openslides-performance/request"
+	"github.com/OpenSlides/openslides-performance/vote"
 	"github.com/alecthomas/kong"
 )
 
@@ -55,4 +56,5 @@ var cli struct {
 	Connect       connect.Options       `cmd:"" help:"Opens many connections to autoupdate and keeps them open."`
 	CreateUsers   createusers.Options   `cmd:"" help:"Create many users."`
 	Request       request.Options       `cmd:"" help:"Sends a logged-in request to OpenSlides."`
+	Vote          vote.Options          `cmd:"" help:"Sends many votes from different users."`
 }
