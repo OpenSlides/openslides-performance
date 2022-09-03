@@ -1,4 +1,4 @@
-package cmd
+package vote
 
 import (
 	"bufio"
@@ -13,90 +13,59 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OpenSlides/openslides-performance/client"
-	"github.com/spf13/cobra"
+	"github.com/OpenSlides/openslides-performance/internal/client"
+	"github.com/OpenSlides/openslides-performance/internal/config"
 	"github.com/vbauerster/mpb/v7"
 )
 
-const voteHelp = `Sends many votes from different users.
-
-This command requires, that there are many user created at the
-backend. You can use the command "create_users" for this job.
-
-Example:
-
-openslides-performance votes --amount 100 --poll_id 42
-
-You should run 'ulimit -Sn 524288' 
-`
-
-func cmdVotes(cfg *config) *cobra.Command {
-	cmd := cobra.Command{
-		Use:   "votes",
-		Short: "Sends many votes from different users",
-		//ValidArgs: []string{"motion", "assignment", "m", "a"},
-		//Args:      cobra.ExactValidArgs(1),
-		Long: voteHelp,
+// Run runs the command.
+func (o Options) Run(ctx context.Context, cfg config.Config) error {
+	admin, err := client.New(cfg)
+	if err != nil {
+		return fmt.Errorf("create admin user: %w", err)
 	}
-	amount := cmd.Flags().IntP("amount", "n", 10, "Amount of users to use.")
-	pollID := cmd.Flags().IntP("poll_id", "i", 1, "ID of the poll to use.")
-	interrupt := cmd.Flags().Bool("interrupt", false, "Wait for a user input after login.")
-	useLoop := cmd.Flags().Bool("loop", false, "After the test, start it again with the logged in users.")
-	// choice := cmd.Flags().IntP("choice", "c", 0, "Amount of answers per vote.")
+	if err := admin.Login(ctx); err != nil {
+		return fmt.Errorf("login admin: %w", err)
+	}
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		ctx, cancel := interruptContext()
-		defer cancel()
+	meetingID, optionID, err := pollData(ctx, admin, o.PollID)
+	if err != nil {
+		return fmt.Errorf("getting poll data: %w", err)
+	}
 
-		admin, err := client.New(cfg.addr(), cfg.forceIPv4)
+	clients := make([]*client.Client, o.Amount)
+	for i := 0; i < len(clients); i++ {
+		c, err := client.New(cfg)
 		if err != nil {
-			return fmt.Errorf("create admin user: %w", err)
+			return fmt.Errorf("creating client: %w", err)
 		}
-		if err := admin.Login(ctx, cfg.username, cfg.password); err != nil {
-			return fmt.Errorf("login admin: %w", err)
+		clients[i] = c
+	}
+
+	log.Printf("Login %d clients", len(clients))
+	start := time.Now()
+	massLogin(ctx, clients, meetingID)
+	log.Printf("All clients logged in %v", time.Now().Sub(start))
+
+	first := true
+
+	for first || o.Loop {
+		first = false
+
+		if o.Interrupt || o.Loop {
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Println("Hit enter to continue")
+			reader.ReadString('\n')
+			log.Println("Starting voting")
 		}
 
-		meetingID, optionID, err := pollData(ctx, admin, *pollID)
-		if err != nil {
-			return fmt.Errorf("getting poll data: %w", err)
-		}
-
-		var clients []*client.Client
-		for i := 0; i < *amount; i++ {
-			c, err := client.New(cfg.addr(), cfg.forceIPv4)
-			if err != nil {
-				return fmt.Errorf("creating client: %w", err)
-			}
-			clients = append(clients, c)
-		}
-
-		log.Printf("Login %d clients", *amount)
 		start := time.Now()
-		massLogin(ctx, clients, meetingID)
-		log.Printf("All clients logged in %v", time.Now().Sub(start))
-
-		first := true
-
-		for first || *useLoop {
-			first = false
-
-			if *interrupt || *useLoop {
-				reader := bufio.NewReader(os.Stdin)
-				fmt.Println("Hit enter to continue")
-				reader.ReadString('\n')
-				log.Println("Starting voting")
-			}
-
-			start := time.Now()
-			url := "/system/vote"
-			massVotes(ctx, clients, url, *pollID, optionID)
-			log.Printf("All Clients have voted in %v", time.Now().Sub(start))
-		}
-
-		return nil
+		url := "/system/vote"
+		massVotes(ctx, clients, url, o.PollID, optionID)
+		log.Printf("All Clients have voted in %v", time.Now().Sub(start))
 	}
 
-	return &cmd
+	return nil
 }
 
 func pollData(ctx context.Context, client *client.Client, pollID int) (meetingID, optionID int, err error) {
@@ -165,7 +134,7 @@ func massLogin(ctx context.Context, clients []*client.Client, meetingID int) {
 
 			username := fmt.Sprintf("m%ddummy%d", meetingID, i+1)
 
-			if err := client.Login(ctx, username, "pass"); err != nil {
+			if err := client.LoginWithCredentials(ctx, username, "pass"); err != nil {
 				log.Printf("Login failed for user %s: %v", username, err)
 				return
 			}

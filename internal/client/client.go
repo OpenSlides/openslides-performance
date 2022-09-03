@@ -12,11 +12,13 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/OpenSlides/openslides-performance/internal/config"
 )
 
 // Client holds the connection to the OpenSlides server.
 type Client struct {
-	addr       string
+	cfg        config.Config
 	httpClient *http.Client
 
 	authCookie *http.Cookie
@@ -25,9 +27,9 @@ type Client struct {
 }
 
 // New initializes a new client.
-func New(addr string, forceIPv4 bool) (*Client, error) {
+func New(cfg config.Config) (*Client, error) {
 	var dialContext func(ctx context.Context, network, addr string) (net.Conn, error)
-	if forceIPv4 {
+	if cfg.IPv4 {
 		var zeroDialer net.Dialer
 		dialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return zeroDialer.DialContext(ctx, "tcp4", addr)
@@ -35,7 +37,7 @@ func New(addr string, forceIPv4 bool) (*Client, error) {
 	}
 
 	c := Client{
-		addr: addr,
+		cfg: cfg,
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
@@ -57,7 +59,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	}
 
 	if req.URL.Host == "" {
-		base, err := url.Parse(c.addr)
+		base, err := url.Parse(c.cfg.Addr())
 		if err != nil {
 			return nil, fmt.Errorf("parsing base url: %w", err)
 		}
@@ -70,9 +72,15 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 
 // Login uses the username and password to login the client. Sets the returned
 // cookie for later requests.
-func (c *Client) Login(ctx context.Context, username, password string) error {
-	url := c.addr + "/system/auth/login"
-	payload := fmt.Sprintf(`{"username": "%s", "password": "%s"}`, username, password)
+func (c *Client) Login(ctx context.Context) error {
+	return c.LoginWithCredentials(ctx, c.cfg.Username, c.cfg.Password)
+}
+
+// LoginWithCredentials is like Login but uses the given credentials instead of
+// config.
+func (c *Client) LoginWithCredentials(ctx context.Context, username, password string) error {
+	url := c.cfg.Addr() + "/system/auth/login"
+	payload := fmt.Sprintf(`{"username": "%s", "password": "%s"}`, c.cfg.Username, c.cfg.Password)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(payload))
 	if err != nil {

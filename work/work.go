@@ -1,4 +1,4 @@
-package cmd
+package work
 
 import (
 	"context"
@@ -8,62 +8,38 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/OpenSlides/openslides-performance/client"
-	"github.com/spf13/cobra"
+	"github.com/OpenSlides/openslides-performance/internal/client"
+	"github.com/OpenSlides/openslides-performance/internal/config"
 	"golang.org/x/sync/errgroup"
 )
 
-const rworkHelp = `Generates background work on the server
+// Run runs the command.
+func (o Options) Run(ctx context.Context, cfg config.Config) error {
+	eg, ctx := errgroup.WithContext(ctx)
+	for i := 0; i < o.Amount; i++ {
+		eg.Go(func() error {
+			c, err := client.New(cfg)
+			if err != nil {
+				return fmt.Errorf("creating client: %w", err)
+			}
 
-It uses different strategie to create the load. The strategie can
-be set via the argument --strategy which is a string. Possible strategies are:
+			if err := c.Login(ctx); err != nil {
+				return fmt.Errorf("login client: %w", err)
+			}
 
-* topic-done: sets the done status of a topic to true and false
-* motion-state: sets the state of a motion to 2 and then resets it`
+			f := topicDone
+			switch o.Strategy {
+			case "topic-done":
+				f = topicDone
+			case "motion-state":
+				f = motionState
+			}
 
-func cmdWork(cfg *config) *cobra.Command {
-	cmd := cobra.Command{
-		Use:   "work",
-		Short: "generates background work",
-		Long:  rworkHelp,
+			return f(ctx, c, o.MeetingID)
+		})
 	}
 
-	meetingID := cmd.Flags().IntP("meeting", "m", 1, "MeetingID to use")
-	amount := cmd.Flags().IntP("amount", "n", 10, "Amount of workers to use.")
-	strategy := cmd.Flags().StringP("strategy", "s", "topic-done", "Strategy for the background tasks")
-
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		ctx, cancel := interruptContext()
-		defer cancel()
-
-		eg, ctx := errgroup.WithContext(ctx)
-		for i := 0; i < *amount; i++ {
-			eg.Go(func() error {
-				c, err := client.New(cfg.addr(), cfg.forceIPv4)
-				if err != nil {
-					return fmt.Errorf("creating client: %w", err)
-				}
-
-				if err := c.Login(ctx, cfg.username, cfg.password); err != nil {
-					return fmt.Errorf("login client: %w", err)
-				}
-
-				f := topicDone
-				switch *strategy {
-				case "topic-done":
-					f = topicDone
-				case "motion-state":
-					f = motionState
-				}
-
-				return f(ctx, c, *meetingID)
-			})
-		}
-
-		return eg.Wait()
-	}
-
-	return &cmd
+	return eg.Wait()
 }
 
 func motionState(ctx context.Context, client *client.Client, meetingID int) (err error) {
