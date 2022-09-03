@@ -14,6 +14,7 @@ import (
 	"github.com/OpenSlides/openslides-performance/internal/config"
 	"github.com/OpenSlides/openslides-performance/request"
 	"github.com/OpenSlides/openslides-performance/vote"
+	"github.com/OpenSlides/openslides-performance/work"
 	"github.com/alecthomas/kong"
 )
 
@@ -57,4 +58,5 @@ var cli struct {
 	CreateUsers   createusers.Options   `cmd:"" help:"Create many users."`
 	Request       request.Options       `cmd:"" help:"Sends a logged-in request to OpenSlides."`
 	Vote          vote.Options          `cmd:"" help:"Sends many votes from different users."`
+	Work          work.Options          `cmd:"" help:"Generates background work."`
 }
