@@ -9,6 +9,7 @@ import (
 	"os/signal"
 
 	"github.com/OpenSlides/openslides-performance/backendaction"
+	"github.com/OpenSlides/openslides-performance/connect"
 	"github.com/OpenSlides/openslides-performance/internal/config"
 	"github.com/OpenSlides/openslides-performance/request"
 	"github.com/alecthomas/kong"
@@ -53,7 +54,9 @@ func interruptContext() (context.Context, context.CancelFunc) {
 }
 
 var cli struct {
-	Request       request.Options       `cmd:"" help:"Sends a logged-in request to OpenSlides."`
-	BackendAction backendaction.Options `cmd:"" help:"Calls a backend action multiple times."`
 	config.Config
+
+	BackendAction backendaction.Options `cmd:"" help:"Calls a backend action multiple times."`
+	Connect       connect.Options       `cmd:"" help:"Opens many connections to autoupdate and keeps them open."`
+	Request       request.Options       `cmd:"" help:"Sends a logged-in request to OpenSlides."`
 }
