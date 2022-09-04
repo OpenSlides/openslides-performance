@@ -17,8 +17,18 @@ archives:
       386: i386
       amd64: x86_64
 dockers:
-  - image_templates:
+  image_templates:
     - ghcr.io/openslides/openslides-performance
+  build_flag_templates:
+    - "--pull"
+    - "--label=org.opencontainers.image.created={{.Date}}"
+    - "--label=org.opencontainers.image.title={{.ProjectName}}"
+    - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+    - "--label=org.opencontainers.image.version={{.Version}}"
+    - "--label=org.opencontainers.image.licenses=MIT"
+    - "--label=org.opencontainers.image.source=https://github.com/OpenSlides/openslides-performance"
+    - "--build-arg=FOO={{.Env.Bar}}"
+    - "--platform=linux/arm64"
 checksum:
   name_template: 'checksums.txt'
 snapshot:
