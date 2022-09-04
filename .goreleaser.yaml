@@ -27,7 +27,6 @@ dockers:
       - "--label=org.opencontainers.image.version={{.Version}}"
       - "--label=org.opencontainers.image.licenses=MIT"
       - "--label=org.opencontainers.image.source=https://github.com/OpenSlides/openslides-performance"
-      - "--build-arg=FOO={{.Env.Bar}}"
       - "--platform=linux/arm64"
 checksum:
   name_template: 'checksums.txt'
