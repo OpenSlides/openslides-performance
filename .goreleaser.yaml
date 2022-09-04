@@ -18,7 +18,7 @@ archives:
       amd64: x86_64
 dockers:
   - image_templates:
-      - ghcr.io/ostcar/openslides-performance
+      - ghcr.io/openslides/openslides-performance
     build_flag_templates:
       - "--pull"
       - "--label=org.opencontainers.image.created={{.Date}}"
