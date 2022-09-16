@@ -6,7 +6,8 @@ import "net/url"
 type Options struct {
 	URL *url.URL `arg:"" help:"URL for the request"`
 
-	Body string `help:"HTTP Post body." short:"b"`
+	Body            string `help:"HTTP Post body." short:"b"`
+	NoBackendWorker bool   `help:"Disable backend worker" short:"w"`
 }
 
 // Help returns the help message

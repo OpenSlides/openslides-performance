@@ -14,7 +14,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/OpenSlides/openslides-performance/internal/config"
@@ -53,54 +52,8 @@ func New(cfg config.Config) (*Client, error) {
 	return &c, nil
 }
 
-// Do is like http.Do but uses the credentials.
-func (c *Client) Do(req *http.Request) (*http.Response, error) {
-	task, err := c.DoTask(req)
-	if err != nil {
-		return nil, err
-	}
-
-	select {
-	case <-task.Done():
-	case <-req.Context().Done():
-		return nil, req.Context().Err()
-	}
-
-	return task.Response(), task.Error()
-}
-
-// Task contains a long running response.
-//
-// It handles backend action workers.
-type Task struct {
-	mu sync.Mutex
-
-	resp *http.Response
-	done chan struct{}
-	err  error
-}
-
-func (t *Task) Error() error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.err
-}
-
-// Response returns the response or nil, if t.Error() is not nil or t.Done() is
-// not closed.
-func (t *Task) Response() *http.Response {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.resp
-}
-
-// Done returns a channel that is closed when the task is done.
-func (t *Task) Done() <-chan struct{} {
-	return t.done
-}
-
-// DoTask is like Do, but returns a Task.
-func (c *Client) DoTask(req *http.Request) (*Task, error) {
+// DoRaw is like Do but without backand worker.
+func (c *Client) DoRaw(req *http.Request) (*http.Response, error) {
 	req.Header.Set("authentication", c.authToken)
 	req.Header.Add("cookie", c.authCookie.String())
 
@@ -117,7 +70,28 @@ func (c *Client) DoTask(req *http.Request) (*Task, error) {
 		req.URL = base.ResolveReference(req.URL)
 	}
 
-	resp, err := checkStatus(c.httpClient.Do(req))
+	return checkStatus(c.httpClient.Do(req))
+}
+
+// Do is like http.Do but uses the credentials.
+func (c *Client) Do(req *http.Request) (*http.Response, error) {
+	task, err := c.DoTask(req)
+	if err != nil {
+		return nil, err
+	}
+
+	select {
+	case <-task.Done():
+	case <-req.Context().Done():
+		return nil, req.Context().Err()
+	}
+
+	return task.Response(), task.Error()
+}
+
+// DoTask is like Do, but returns a Task.
+func (c *Client) DoTask(req *http.Request) (*Task, error) {
+	resp, err := c.DoRaw(req)
 
 	if err != nil {
 		return nil, fmt.Errorf("sending request: %w", err)
