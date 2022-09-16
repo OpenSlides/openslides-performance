@@ -3,8 +3,7 @@ package createusers
 // Options is the meta information for the cli.
 type Options struct {
 	Amount    int `help:"Amount of user to be created." short:"n" default:"10"`
-	meetingID int `help:"If set, put the user in the delegated group of this meeting." short:"m"`
-	Batch     int `help:"Number of users to create with one request. Default is all at once." short:"b"`
+	MeetingID int `help:"If set, put the user in the delegated group of this meeting." short:"m"`
 }
 
 // Help returns the help message
