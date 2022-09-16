@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -78,17 +77,10 @@ func (o Options) Run(ctx context.Context, cfg config.Config) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.Do(req)
-	if err != nil {
+	if _, err := c.Do(req); err != nil {
 		return fmt.Errorf("sending request: %w", err)
 	}
 
-	// TODO: Fix me here
-	fmt.Println(resp.Status)
-	if resp.StatusCode == 202 {
-		body, _ := io.ReadAll(resp.Body)
-		fmt.Println(string(body))
-	}
 	return nil
 }
 

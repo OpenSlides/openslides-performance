@@ -1,6 +1,8 @@
 package client
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
@@ -10,7 +12,9 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/OpenSlides/openslides-performance/internal/config"
@@ -51,6 +55,52 @@ func New(cfg config.Config) (*Client, error) {
 
 // Do is like http.Do but uses the credentials.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
+	task, err := c.DoTask(req)
+	if err != nil {
+		return nil, err
+	}
+
+	select {
+	case <-task.Done():
+	case <-req.Context().Done():
+		return nil, req.Context().Err()
+	}
+
+	return task.Response(), task.Error()
+}
+
+// Task contains a long running response.
+//
+// It handles backend action workers.
+type Task struct {
+	mu sync.Mutex
+
+	resp *http.Response
+	done chan struct{}
+	err  error
+}
+
+func (t *Task) Error() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.err
+}
+
+// Response returns the response or nil, if t.Error() is not nil or t.Done() is
+// not closed.
+func (t *Task) Response() *http.Response {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.resp
+}
+
+// Done returns a channel that is closed when the task is done.
+func (t *Task) Done() <-chan struct{} {
+	return t.done
+}
+
+// DoTask is like Do, but returns a Task.
+func (c *Client) DoTask(req *http.Request) (*Task, error) {
 	req.Header.Set("authentication", c.authToken)
 	req.Header.Add("cookie", c.authCookie.String())
 
@@ -67,7 +117,117 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		req.URL = base.ResolveReference(req.URL)
 	}
 
-	return checkStatus(c.httpClient.Do(req))
+	resp, err := checkStatus(c.httpClient.Do(req))
+
+	if err != nil {
+		return nil, fmt.Errorf("sending request: %w", err)
+	}
+
+	if resp.StatusCode != 202 {
+		c := make(chan struct{})
+		close(c)
+		return &Task{
+			resp: resp,
+			done: c,
+		}, nil
+	}
+
+	return c.backendWorker(req.Context(), resp)
+}
+
+func (c *Client) backendWorker(ctx context.Context, resp *http.Response) (*Task, error) {
+	var body struct {
+		Results [][]struct {
+			FQID string `json:"fqid"`
+		} `json:"results"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("decode backend response: %w", err)
+	}
+
+	outer := body.Results
+	if len(outer) == 0 {
+		return nil, fmt.Errorf("invalid response, no outer list")
+	}
+
+	inner := outer[0]
+	if len(inner) == 0 {
+		return nil, fmt.Errorf("invalid response, no inner list")
+	}
+
+	collection, idStr, found := strings.Cut(inner[0].FQID, "/")
+	if !found || collection != "action_worker" {
+		return nil, fmt.Errorf("invalid response, wront fqid %s", inner[0].FQID)
+	}
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid response, wront id %s", idStr)
+	}
+
+	autoUpdateReq, err := http.NewRequestWithContext(
+		ctx,
+		"GET",
+		"/system/autoupdate",
+		strings.NewReader(fmt.Sprintf(
+			`[{"collection":"action_worker","ids":[%d],"fields":{"state":null,"result":null}}]`,
+			id,
+		)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	autoUpdateResp, err := checkStatus(c.Do(autoUpdateReq))
+	if err != nil {
+		return nil, fmt.Errorf("request work from autoupdate: %w", err)
+	}
+
+	task := Task{
+		done: make(chan struct{}),
+	}
+
+	go func() {
+		defer autoUpdateReq.Body.Close()
+
+		var worker struct {
+			State  string          `json:"state"`
+			Result json.RawMessage `json:"result"`
+		}
+
+		scanner := bufio.NewScanner(autoUpdateResp.Body)
+		for scanner.Scan() {
+			task.mu.Lock()
+			if err := json.Unmarshal(scanner.Bytes(), &worker); err != nil {
+				task.err = fmt.Errorf("decoding autoupdate response: %w", err)
+				task.mu.Unlock()
+				return
+			}
+
+			switch worker.State {
+			case "end":
+				fakeResp := http.Response{
+					StatusCode: 200,
+					Status:     http.StatusText(200),
+					Body:       io.NopCloser(bytes.NewReader(worker.Result)),
+				}
+				task.resp = &fakeResp
+
+			case "aborted":
+				task.err = fmt.Errorf("task aborted")
+
+			default:
+				task.mu.Unlock()
+				continue
+			}
+			close(task.done)
+			task.mu.Unlock()
+			return
+		}
+	}()
+
+	return &task, nil
 }
 
 // Login uses the username and password to login the client. Sets the returned
