@@ -2,6 +2,7 @@ package client_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -76,5 +77,42 @@ func TestBackendActionWorker(t *testing.T) {
 
 	if string(body) != `"autoupdate success"` {
 		t.Errorf("got body `%s`, expected `autoupdate success`", body)
+	}
+}
+
+func TestBackendActionWorkerAbborted(t *testing.T) {
+	ctx := context.Background()
+	fakeServer := newServerSub()
+	ts := httptest.NewServer(fakeServer)
+	c, err := client.New(config.Config{
+		Domain: ts.URL,
+	})
+	if err != nil {
+		t.Fatalf("client.New(): %v", err)
+	}
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		"POST",
+		"/system/action/handle_request",
+		strings.NewReader("fake-body"),
+	)
+	if err != nil {
+		t.Fatalf("creating request: %v", err)
+	}
+
+	fakeServer.backendReturnStatus = 202
+	fakeServer.backendReturnBody = `{"results":[[{"fqid":"action_worker/1"}]]}`
+	messages := make(chan string)
+	go func() {
+		messages <- `{"action_worker/1/state":"running"}`
+		messages <- `{"action_worker/1/state":"aborted"}`
+		close(messages)
+	}()
+	fakeServer.autoupdateMessages = messages
+
+	_, err = c.Do(req)
+	if !errors.Is(err, client.ErrAbborted) {
+		t.Errorf("got error `%v`, expected `%v`", err, err)
 	}
 }

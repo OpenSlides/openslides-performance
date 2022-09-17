@@ -1,9 +1,13 @@
 package client
 
 import (
+	"errors"
 	"net/http"
 	"sync"
 )
+
+// ErrAbborted is returned from a task, when the task was abborted.
+var ErrAbborted = errors.New("backend action abborted")
 
 // Task contains a long running response.
 //
@@ -16,21 +20,22 @@ type Task struct {
 	err  error
 }
 
-func (t *Task) Error() error {
+// Result returns the response and error. Both will be nil until task is done.
+func (t *Task) Result() (*http.Response, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.err
-}
-
-// Response returns the response or nil, if t.Error() is not nil or t.Done() is
-// not closed.
-func (t *Task) Response() *http.Response {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.resp
+	return t.resp, t.err
 }
 
 // Done returns a channel that is closed when the task is done.
 func (t *Task) Done() <-chan struct{} {
 	return t.done
+}
+
+func (t *Task) setDone(resp *http.Response, err error) {
+	t.mu.Lock()
+	t.resp = resp
+	t.err = err
+	close(t.done)
+	t.mu.Unlock()
 }

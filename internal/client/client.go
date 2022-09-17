@@ -87,7 +87,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		return nil, req.Context().Err()
 	}
 
-	return task.Response(), task.Error()
+	return task.Result()
 }
 
 // DoTask is like Do, but returns a Task.
@@ -166,46 +166,37 @@ func (c *Client) backendWorker(ctx context.Context, resp *http.Response) (*Task,
 	go func() {
 		defer autoUpdateReq.Body.Close()
 
-		stateKey := fmt.Sprintf("action_worker/%d/state", id)
-		resultKey := fmt.Sprintf("action_worker/%d/result", id)
+		task.setDone(func() (*http.Response, error) {
+			stateKey := fmt.Sprintf("action_worker/%d/state", id)
+			resultKey := fmt.Sprintf("action_worker/%d/result", id)
 
-		var worker map[string]json.RawMessage
+			var worker map[string]json.RawMessage
 
-		scanner := bufio.NewScanner(autoUpdateResp.Body)
-		for scanner.Scan() {
-			line := scanner.Bytes()
-			task.mu.Lock()
-			if err := json.Unmarshal(line, &worker); err != nil {
-				task.err = fmt.Errorf("decoding autoupdate response: %w", err)
-				task.mu.Unlock()
-				return
-			}
-
-			switch string(worker[stateKey]) {
-			case `"end"`:
-				fakeResp := http.Response{
-					StatusCode: 200,
-					Status:     http.StatusText(200),
-					Body:       io.NopCloser(bytes.NewReader(worker[resultKey])),
+			scanner := bufio.NewScanner(autoUpdateResp.Body)
+			for scanner.Scan() {
+				if err := json.Unmarshal(scanner.Bytes(), &worker); err != nil {
+					return nil, fmt.Errorf("decoding autoupdate response: %w", err)
 				}
-				task.resp = &fakeResp
 
-			case `"aborted"`:
-				task.err = fmt.Errorf("task aborted")
+				switch string(worker[stateKey]) {
+				case `"end"`:
+					fakeResp := http.Response{
+						StatusCode: 200,
+						Status:     http.StatusText(200),
+						Body:       io.NopCloser(bytes.NewReader(worker[resultKey])),
+					}
+					return &fakeResp, nil
 
-			default:
-				task.mu.Unlock()
-				continue
+				case `"aborted"`:
+					return nil, ErrAbborted
+				}
 			}
-			close(task.done)
-			task.mu.Unlock()
-			return
-		}
-		if err := scanner.Err(); err != nil {
-			task.mu.Lock()
-			task.err = fmt.Errorf("scanner failed: %w", err)
-			task.mu.Unlock()
-		}
+			if err := scanner.Err(); err != nil {
+				return nil, fmt.Errorf("scanner failed: %w", err)
+			}
+
+			return nil, fmt.Errorf("autoupdate connection was broken")
+		}())
 	}()
 
 	return &task, nil
