@@ -4,6 +4,7 @@ package main
 // successfull login send all request, that the client usual sends.
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -27,6 +28,9 @@ func main() {
 	cliCtx.BindTo(ctx, (*context.Context)(nil))
 	cliCtx.Bind(cli.Config)
 	if err := cliCtx.Run(); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		fmt.Println(err)
 		os.Exit(1)
 	}

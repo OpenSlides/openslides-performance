@@ -13,7 +13,7 @@ type Config struct {
 	HTTP     bool   `help:"Use http instead of https. Default is https."`
 	IPv4     bool   `help:"Force IPv4 for requests." short:"4"`
 
-	RetryEventProvider func() <-chan struct{}
+	RetryEventProvider func() <-chan struct{} `kong:"-"`
 }
 
 // Addr returns the domain with the http or https prefix.
