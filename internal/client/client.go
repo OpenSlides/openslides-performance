@@ -14,7 +14,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/OpenSlides/openslides-performance/internal/config"
 )
@@ -27,6 +26,8 @@ type Client struct {
 	authCookie *http.Cookie
 	authToken  string
 	userID     int
+
+	retryEvent func() <-chan struct{}
 }
 
 // New initializes a new client.
@@ -165,30 +166,31 @@ func (c *Client) backendWorker(ctx context.Context, resp *http.Response) (*Task,
 	go func() {
 		defer autoUpdateReq.Body.Close()
 
-		var worker struct {
-			State  string          `json:"state"`
-			Result json.RawMessage `json:"result"`
-		}
+		stateKey := fmt.Sprintf("action_worker/%d/state", id)
+		resultKey := fmt.Sprintf("action_worker/%d/result", id)
+
+		var worker map[string]json.RawMessage
 
 		scanner := bufio.NewScanner(autoUpdateResp.Body)
 		for scanner.Scan() {
+			line := scanner.Bytes()
 			task.mu.Lock()
-			if err := json.Unmarshal(scanner.Bytes(), &worker); err != nil {
+			if err := json.Unmarshal(line, &worker); err != nil {
 				task.err = fmt.Errorf("decoding autoupdate response: %w", err)
 				task.mu.Unlock()
 				return
 			}
 
-			switch worker.State {
-			case "end":
+			switch string(worker[stateKey]) {
+			case `"end"`:
 				fakeResp := http.Response{
 					StatusCode: 200,
 					Status:     http.StatusText(200),
-					Body:       io.NopCloser(bytes.NewReader(worker.Result)),
+					Body:       io.NopCloser(bytes.NewReader(worker[resultKey])),
 				}
 				task.resp = &fakeResp
 
-			case "aborted":
+			case `"aborted"`:
 				task.err = fmt.Errorf("task aborted")
 
 			default:
@@ -198,6 +200,11 @@ func (c *Client) backendWorker(ctx context.Context, resp *http.Response) (*Task,
 			close(task.done)
 			task.mu.Unlock()
 			return
+		}
+		if err := scanner.Err(); err != nil {
+			task.mu.Lock()
+			task.err = fmt.Errorf("scanner failed: %w", err)
+			task.mu.Unlock()
 		}
 	}()
 
@@ -228,7 +235,12 @@ func (c *Client) LoginWithCredentials(ctx context.Context, username, password st
 		if err == nil {
 			break
 		}
-		time.Sleep(time.Second)
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-c.cfg.RetryEvent():
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("sending login request: %w", err)
