@@ -8,6 +8,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/ostcar/topic v0.4.1
 	github.com/vbauerster/mpb/v7 v7.5.2
+	golang.org/x/crypto v0.0.0-20220829220503-c86fa9a7ed90
 	golang.org/x/sync v0.0.0-20220819030929-7fc1605a5dde
 )
 

@@ -3,6 +3,7 @@ package voteclient
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,7 +21,14 @@ func (o Options) Run(ctx context.Context, cfg config.Config) error {
 		return fmt.Errorf("initial http client: %w", err)
 	}
 
-	p := tea.NewProgram(initialModel(o.PollID, cli))
+	model, err := initialModel(o.PollID, o.MainKey, cli)
+	if err != nil {
+		return fmt.Errorf("initial model: %w", err)
+	}
+
+	model.local = o.Local
+
+	p := tea.NewProgram(model)
 	if err := p.Start(); err != nil {
 		return fmt.Errorf("running bubble tea app: %w", err)
 	}
@@ -29,7 +37,8 @@ func (o Options) Run(ctx context.Context, cfg config.Config) error {
 }
 
 type model struct {
-	pollID int
+	pollID     int
+	pubMainKey []byte
 
 	ticks int
 	err   error
@@ -42,6 +51,7 @@ type model struct {
 
 	// Non model stuff
 	client *client.Client
+	local  bool
 }
 
 type user struct {
@@ -85,6 +95,8 @@ type poll struct {
 	GlobalNo       bool   `json:"global_no"`
 	GlobalAbstain  bool   `json:"global_abstain"`
 	OptionIDs      []int  `json:"option_ids"`
+	CryptKey       []byte `json:"crypt_key"`           // TODO
+	CryptKeySig    []byte `json:"crypt_key_signature"` //TODO
 }
 
 type ballot struct {
@@ -92,13 +104,24 @@ type ballot struct {
 	selected int
 	err      error
 	sending  bool
+	token    string
 }
 
-func initialModel(pollID int, client *client.Client) model {
-	return model{
-		pollID: pollID,
-		client: client,
+func initialModel(pollID int, mainKey string, client *client.Client) (model, error) {
+	var key []byte
+	if len(mainKey) > 0 {
+		var err error
+		key, err = base64.StdEncoding.DecodeString(mainKey)
+		if err != nil {
+			return model{}, fmt.Errorf("decoding main key from base64: %w", err)
+		}
 	}
+
+	return model{
+		pollID:     pollID,
+		pubMainKey: key,
+		client:     client,
+	}, nil
 }
 
 func (m model) Init() tea.Cmd {
@@ -120,11 +143,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "enter":
-
 			m.ballot.sending = true
 			m.ballot.err = nil
-			voteValue := createVote(m.poll, m.ballot)
-			return m, vote(m.client, m.pollID, voteValue)
+			voteValue, newBallot, err := createVote(m.poll, m.ballot, m.pubMainKey)
+			if err != nil {
+				m.err = fmt.Errorf("creating vote: %w", err)
+				return m, nil
+			}
+
+			m.ballot = newBallot
+
+			return m, vote(m.client, m.pollID, voteValue, m.local)
 		}
 
 	case msgTick:
@@ -137,8 +166,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		cmdAU := autoupdateConnect(m.client, autoupdateRequest(m.client.UserID(), m.pollID))
-		cmdVoted := haveIVoted(m.client, m.pollID)
+		cmdAU := autoupdateConnect(m.client, autoupdateRequest(m.client.UserID(), m.pollID), m.local)
+		cmdVoted := haveIVoted(m.client, m.pollID, m.local)
 
 		return m, tea.Batch(cmdAU, cmdVoted)
 
@@ -169,7 +198,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		var cmds []tea.Cmd
 		if oldState != m.poll.State {
-			cmds = append(cmds, haveIVoted(m.client, m.pollID))
+			cmds = append(cmds, haveIVoted(m.client, m.pollID, m.local))
 		}
 
 		if !msg.finished {
@@ -201,9 +230,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func createVote(poll poll, ballot ballot) string {
+func createVote(poll poll, bt ballot, pubMainKey []byte) (string, ballot, error) {
 	var v string
-	switch ballot.selected % 3 {
+	switch bt.selected % 3 {
 	case 0:
 		v = "Y"
 	case 1:
@@ -212,13 +241,19 @@ func createVote(poll poll, ballot ballot) string {
 		v = "A"
 	}
 
-	value := fmt.Sprintf(`{"%d":"%s"}`, ballot.optionID, v)
-
-	if poll.Type == "crypt" {
-		// DO the magic
+	if poll.Type != "crypt" {
+		value := fmt.Sprintf(`{"%d":"%s"}`, bt.optionID, v)
+		return value, bt, nil
 	}
 
-	return value
+	withtoken := fmt.Sprintf(`{"%d":"%s","token":"%s"}`, bt.optionID, v, bt.token)
+	bt.token = createVoteToken()
+	var err error
+	value, err := encryptVote(withtoken, pubMainKey, poll.CryptKey, poll.CryptKeySig)
+	if err != nil {
+		return "", ballot{}, fmt.Errorf("encrypting vote: %w", err)
+	}
+	return value, bt, nil
 }
 
 func (m model) View() string {
@@ -246,7 +281,19 @@ func (m model) View() string {
 		return fmt.Sprintf("Logged in as user %d. Loading data %s", m.client.UserID(), viewProgress(m.ticks))
 	}
 
-	return fmt.Sprintf("Hello %s!\n\n%s\n", m.user, viewPoll(m.poll, m.ticks, m.hasVoted, m.ballot))
+	out := fmt.Sprintf("Hello %s!\n\n", m.user)
+
+	if m.pubMainKey != nil {
+		out += fmt.Sprintf("Please make sure the public main key is correct: %s\n\n", viewPubKey(m.pubMainKey))
+	}
+
+	out += viewPoll(m.poll, m.ticks, m.hasVoted, m.ballot)
+
+	return out
+}
+
+func viewPubKey(key []byte) string {
+	return base64.StdEncoding.EncodeToString(key)
 }
 
 func viewProgress(ticks int) string {
@@ -262,37 +309,40 @@ func viewPoll(poll poll, ticks int, hasVoted bool, ballot ballot) string {
 
 	fmt.Fprintf(content, "Poll: %s (%s)\n\n", poll.Title, poll.State)
 
-	if poll.State != "started" {
-		return content.String()
-	}
+	switch poll.State {
+	case "started":
+		if ballot.err != nil {
+			fmt.Fprintf(content, "Error: %v\n", ballot.err)
+		}
 
-	if ballot.err != nil {
-		fmt.Fprintf(content, "Error: %v\n", ballot.err)
-	}
+		if hasVoted {
+			fmt.Fprintf(content, "You already voted for poll %d\n", poll.ID)
+			return content.String()
+		}
 
-	if hasVoted {
-		fmt.Fprintf(content, "You already voted for poll %d\n", poll.ID)
-		return content.String()
-	}
+		if ballot.sending {
+			fmt.Fprintf(content, "Sending ballot %s\n", viewProgress(ticks))
+		}
 
-	if ballot.sending {
-		fmt.Fprintf(content, "Sending ballot %s\n", viewProgress(ticks))
-	}
+		if poll.Method != "YNA" {
+			fmt.Fprintf(content, "Poll has type %s. This is not yet supported\n", poll.Type)
+			return content.String()
+		}
 
-	if poll.Method != "YNA" {
-		fmt.Fprintf(content, "Poll has type %s. This is not yet supported\n", poll.Type)
-		return content.String()
-	}
+		if ballot.selected < 0 {
+			ballot.selected += 3000
+		}
+		ballot.selected = ballot.selected % 3
+		checked := map[bool]string{
+			true:  "X",
+			false: " ",
+		}
+		fmt.Fprintf(content, "[%s] Yes\n[%s] No\n[%s]Abstain\n", checked[ballot.selected == 0], checked[ballot.selected == 1], checked[ballot.selected == 2])
 
-	if ballot.selected < 0 {
-		ballot.selected += 3000
+	case "published":
+		// TODO: Show vote results, check if token is in results and validate the signature for crypt votes.
 	}
-	ballot.selected = ballot.selected % 3
-	checked := map[bool]string{
-		true:  "X",
-		false: " ",
-	}
-	fmt.Fprintf(content, "[%s] Yes\n[%s] No\n[%s]Abstain\n", checked[ballot.selected == 0], checked[ballot.selected == 1], checked[ballot.selected == 2])
 
 	return content.String()
+
 }

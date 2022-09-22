@@ -2,7 +2,9 @@ package voteclient
 
 // Options is the meta information for the cli.
 type Options struct {
-	PollID int `arg:"" help:"ID of the poll"`
+	PollID  int    `arg:"" help:"ID of the poll."`
+	MainKey string `help:"Public main key from vote decrypt as base64." short:"k"`
+	Local   bool   `help:"For local development."`
 }
 
 // Help returns the help message

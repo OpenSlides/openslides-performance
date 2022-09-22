@@ -7,6 +7,8 @@ type Config struct {
 	Password string `help:"Password to use for logged-in requests." short:"p" default:"admin"`
 	HTTP     bool   `help:"Use http instead of https. Default is https."`
 	IPv4     bool   `help:"Force IPv4 for requests." short:"4"`
+
+	FakeAuth bool `help:"If set, do not send a login request and fake to be logged in as user 1."`
 }
 
 // Addr returns the domain with the http or https prefix.

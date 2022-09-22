@@ -13,9 +13,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func autoupdateConnect(cli *client.Client, request string) tea.Cmd {
+func autoupdateConnect(cli *client.Client, request string, local bool) tea.Cmd {
 	return func() tea.Msg {
-		req, err := http.NewRequest("GET", "/system/autoupdate", strings.NewReader(request))
+		url := "/system/autoupdate"
+		if local {
+			url = "http://localhost:9012" + url
+		}
+
+		req, err := http.NewRequest("GET", url, strings.NewReader(request))
 		if err != nil {
 			return msgAutoupdate{err: fmt.Errorf("creating request: %w", err)}
 		}

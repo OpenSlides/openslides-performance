@@ -31,9 +31,12 @@ type msgLogin struct {
 	err error
 }
 
-func vote(cli *client.Client, pollID int, ballot string) tea.Cmd {
+func vote(cli *client.Client, pollID int, ballot string, local bool) tea.Cmd {
 	return func() tea.Msg {
 		url := fmt.Sprintf("/system/vote?id=%d", pollID)
+		if local {
+			url = "http://localhost:9013" + url
+		}
 		content := fmt.Sprintf(`{"value":%s}`, ballot)
 		req, err := http.NewRequest("POST", url, strings.NewReader(content))
 		if err != nil {
@@ -56,9 +59,13 @@ type msgVote struct {
 	err error
 }
 
-func haveIVoted(cli *client.Client, pollID int) tea.Cmd {
+func haveIVoted(cli *client.Client, pollID int, local bool) tea.Cmd {
 	return func() tea.Msg {
 		url := fmt.Sprintf("/system/vote/voted?ids=%d", pollID)
+		if local {
+			url = "http://localhost:9013" + url
+		}
+
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			return msgHaveIVoted{err: fmt.Errorf("creating request: %w", err)}
