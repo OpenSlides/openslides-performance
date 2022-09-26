@@ -80,7 +80,7 @@ func (c *Client) Login(ctx context.Context) error {
 // config.
 func (c *Client) LoginWithCredentials(ctx context.Context, username, password string) error {
 	url := c.cfg.Addr() + "/system/auth/login"
-	payload := fmt.Sprintf(`{"username": "%s", "password": "%s"}`, c.cfg.Username, c.cfg.Password)
+	payload := fmt.Sprintf(`{"username": "%s", "password": "%s"}`, username, password)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(payload))
 	if err != nil {
