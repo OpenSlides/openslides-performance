@@ -27,19 +27,19 @@ func (o Options) Run(ctx context.Context, cfg config.Config) error {
 
 	namePrefix := ""
 	extraFields := ""
-	if o.meetingID != 0 {
-		groupID, err := delegateGroup(ctx, c, o.meetingID)
+	if o.MeetingID != 0 {
+		groupID, err := delegateGroup(ctx, c, o.MeetingID)
 		if err != nil {
 			return fmt.Errorf("fetching delegated group: %w", err)
 		}
 
-		namePrefix = fmt.Sprintf("m%d", o.meetingID)
+		namePrefix = fmt.Sprintf("m%d", o.MeetingID)
 		extraFields = fmt.Sprintf(`
 				"is_present_in_meeting_ids": [%d],
 				"group_$_ids": {"%d":[%d]},
 				`,
-			o.meetingID,
-			o.meetingID,
+			o.MeetingID,
+			o.MeetingID,
 			groupID,
 		)
 	}
