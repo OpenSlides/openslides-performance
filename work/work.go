@@ -48,6 +48,11 @@ func motionState(ctx context.Context, client *client.Client, meetingID int) (err
 		return fmt.Errorf("creating motion: %w", err)
 	}
 
+	nextStateID, err := motionNextStateID(ctx, client, motionID)
+	if err != nil {
+		return fmt.Errorf("getting id of next state: %w", err)
+	}
+
 	defer func() {
 		deleteErr := deleteWorkerMotion(context.Background(), client, motionID)
 		if err == nil && deleteErr != nil {
@@ -55,7 +60,7 @@ func motionState(ctx context.Context, client *client.Client, meetingID int) (err
 		}
 	}()
 
-	if err := toggleWorkerMotion(ctx, client, motionID); err != nil {
+	if err := toggleWorkerMotion(ctx, client, motionID, nextStateID); err != nil {
 		return fmt.Errorf("toggle motion: %w", err)
 	}
 
@@ -64,7 +69,7 @@ func motionState(ctx context.Context, client *client.Client, meetingID int) (err
 
 func createWorkerMotion(ctx context.Context, client *client.Client, meetingID int) (int, error) {
 	body := fmt.Sprintf(
-		`[{"action":"motion.create","data":[{"meeting_id":%d,"title":"worker-motion","text":"<p>dummy</p>","workflow_id":1}]}]`,
+		`[{"action":"motion.create","data":[{"meeting_id":%d,"title":"worker-motion","text":"<p>dummy</p>"}]}]`,
 		meetingID,
 	)
 
@@ -86,18 +91,77 @@ func createWorkerMotion(ctx context.Context, client *client.Client, meetingID in
 	return respBody.Results[0][0].MotionID, nil
 }
 
-func toggleWorkerMotion(ctx context.Context, client *client.Client, motionID int) error {
+func motionNextStateID(ctx context.Context, client *client.Client, motionID int) (int, error) {
+	reqBody := fmt.Sprintf(
+		`[{"collection":"motion","ids":[%d],"fields":{"state_id":{"type":"relation","collection":"motion_state","fields":{"next_state_ids":null}}}}]`,
+		motionID,
+	)
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		"GET",
+		"/system/autoupdate?single=1",
+		strings.NewReader(reqBody),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("creating request: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var body map[string]json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return 0, fmt.Errorf("decoding body: %w", err)
+	}
+
+	motionStateIDRaw, ok := body[fmt.Sprintf("motion/%d/state_id", motionID)]
+	if !ok {
+		return 0, fmt.Errorf("motion does not exist: %d", motionID)
+	}
+
+	var motionStateID int
+	if err := json.Unmarshal(motionStateIDRaw, &motionStateID); err != nil {
+		return 0, fmt.Errorf("decoding motion state id: %w", err)
+	}
+
+	nextStateIDsRaw, ok := body[fmt.Sprintf("motion_state/%d/next_state_ids", motionStateID)]
+	if !ok {
+		return 0, fmt.Errorf("motion state does not exist: %d", motionStateID)
+	}
+
+	var nextStateIDs []int
+	if err := json.Unmarshal(nextStateIDsRaw, &nextStateIDs); err != nil {
+		return 0, fmt.Errorf("decoding next state ids: %w", err)
+	}
+
+	if len(nextStateIDs) == 0 {
+		return 0, fmt.Errorf("no next state")
+	}
+
+	return nextStateIDs[0], nil
+}
+
+func toggleWorkerMotion(ctx context.Context, client *client.Client, motionID int, nextStateID int) error {
+	bodyNextState := fmt.Sprintf(
+		`[{"action":"motion.set_state","data":[{"id":%d,"state_id":%d}]}]`,
+		motionID,
+		nextStateID,
+	)
+
+	bodyReset := fmt.Sprintf(
+		`[{"action":"motion.reset_state","data":[{"id":%d}]}]`,
+		motionID,
+	)
+
 	toggleState := false
 	for {
-		body := fmt.Sprintf(
-			`[{"action":"motion.set_state","data":[{"id":%d,"state_id":2}]}]`,
-			motionID,
-		)
+		body := bodyNextState
 		if toggleState {
-			body = fmt.Sprintf(
-				`[{"action":"motion.reset_state","data":[{"id":%d}]}]`,
-				motionID,
-			)
+			body = bodyReset
 		}
 
 		var respBody struct {
@@ -224,7 +288,6 @@ func agendaID(ctx context.Context, client *client.Client, topicID int) (int, err
 	}
 
 	return agendaID, nil
-
 }
 
 func boolToStr(b bool) string {
