@@ -15,27 +15,27 @@ import (
 
 // Run runs the command.
 func (o Options) Run(ctx context.Context, cfg config.Config) error {
+	workFunc := topicDone
+	switch o.Strategy {
+	case "topic-done":
+		workFunc = topicDone
+	case "motion-state":
+		workFunc = motionState
+	}
+
 	eg, ctx := errgroup.WithContext(ctx)
 	for i := 0; i < o.Amount; i++ {
 		eg.Go(func() error {
-			c, err := client.New(cfg)
+			cli, err := client.New(cfg)
 			if err != nil {
 				return fmt.Errorf("creating client: %w", err)
 			}
 
-			if err := c.Login(ctx); err != nil {
+			if err := cli.Login(ctx); err != nil {
 				return fmt.Errorf("login client: %w", err)
 			}
 
-			f := topicDone
-			switch o.Strategy {
-			case "topic-done":
-				f = topicDone
-			case "motion-state":
-				f = motionState
-			}
-
-			return f(ctx, c, o.MeetingID)
+			return workFunc(ctx, cli, o.MeetingID)
 		})
 	}
 
@@ -48,6 +48,11 @@ func motionState(ctx context.Context, client *client.Client, meetingID int) (err
 		return fmt.Errorf("creating motion: %w", err)
 	}
 
+	nextStateID, err := motionNextStateID(ctx, client, motionID)
+	if err != nil {
+		return fmt.Errorf("getting id of next state: %w", err)
+	}
+
 	defer func() {
 		deleteErr := deleteWorkerMotion(context.Background(), client, motionID)
 		if err == nil && deleteErr != nil {
@@ -55,7 +60,7 @@ func motionState(ctx context.Context, client *client.Client, meetingID int) (err
 		}
 	}()
 
-	if err := toggleWorkerMotion(ctx, client, motionID); err != nil {
+	if err := toggleWorkerMotion(ctx, client, motionID, nextStateID); err != nil {
 		return fmt.Errorf("toggle motion: %w", err)
 	}
 
@@ -64,7 +69,7 @@ func motionState(ctx context.Context, client *client.Client, meetingID int) (err
 
 func createWorkerMotion(ctx context.Context, client *client.Client, meetingID int) (int, error) {
 	body := fmt.Sprintf(
-		`[{"action":"motion.create","data":[{"meeting_id":%d,"title":"worker-motion","text":"<p>dummy</p>","workflow_id":1}]}]`,
+		`[{"action":"motion.create","data":[{"meeting_id":%d,"title":"worker-motion","text":"<p>dummy</p>"}]}]`,
 		meetingID,
 	)
 
@@ -86,18 +91,77 @@ func createWorkerMotion(ctx context.Context, client *client.Client, meetingID in
 	return respBody.Results[0][0].MotionID, nil
 }
 
-func toggleWorkerMotion(ctx context.Context, client *client.Client, motionID int) error {
+func motionNextStateID(ctx context.Context, client *client.Client, motionID int) (int, error) {
+	reqBody := fmt.Sprintf(
+		`[{"collection":"motion","ids":[%d],"fields":{"state_id":{"type":"relation","collection":"motion_state","fields":{"next_state_ids":null}}}}]`,
+		motionID,
+	)
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		"GET",
+		"/system/autoupdate?single=1",
+		strings.NewReader(reqBody),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("creating request: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var body map[string]json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return 0, fmt.Errorf("decoding body: %w", err)
+	}
+
+	motionStateIDRaw, ok := body[fmt.Sprintf("motion/%d/state_id", motionID)]
+	if !ok {
+		return 0, fmt.Errorf("motion does not exist: %d", motionID)
+	}
+
+	var motionStateID int
+	if err := json.Unmarshal(motionStateIDRaw, &motionStateID); err != nil {
+		return 0, fmt.Errorf("decoding motion state id: %w", err)
+	}
+
+	nextStateIDsRaw, ok := body[fmt.Sprintf("motion_state/%d/next_state_ids", motionStateID)]
+	if !ok {
+		return 0, fmt.Errorf("motion state does not exist: %d", motionStateID)
+	}
+
+	var nextStateIDs []int
+	if err := json.Unmarshal(nextStateIDsRaw, &nextStateIDs); err != nil {
+		return 0, fmt.Errorf("decoding next state ids: %w", err)
+	}
+
+	if len(nextStateIDs) == 0 {
+		return 0, fmt.Errorf("no next state")
+	}
+
+	return nextStateIDs[0], nil
+}
+
+func toggleWorkerMotion(ctx context.Context, client *client.Client, motionID int, nextStateID int) error {
+	bodyNextState := fmt.Sprintf(
+		`[{"action":"motion.set_state","data":[{"id":%d,"state_id":%d}]}]`,
+		motionID,
+		nextStateID,
+	)
+
+	bodyReset := fmt.Sprintf(
+		`[{"action":"motion.reset_state","data":[{"id":%d}]}]`,
+		motionID,
+	)
+
 	toggleState := false
 	for {
-		body := fmt.Sprintf(
-			`[{"action":"motion.set_state","data":[{"id":%d,"state_id":2}]}]`,
-			motionID,
-		)
+		body := bodyNextState
 		if toggleState {
-			body = fmt.Sprintf(
-				`[{"action":"motion.reset_state","data":[{"id":%d}]}]`,
-				motionID,
-			)
+			body = bodyReset
 		}
 
 		var respBody struct {
@@ -146,6 +210,11 @@ func topicDone(ctx context.Context, client *client.Client, meetingID int) (err e
 		return fmt.Errorf("creating topic: %w", err)
 	}
 
+	aid, err := agendaID(ctx, client, topicID)
+	if err != nil {
+		return fmt.Errorf("fetching agenda id for topic %d: %w", topicID, err)
+	}
+
 	defer func() {
 		deleteErr := deleteWorkerTopic(context.Background(), client, topicID)
 		if err == nil && deleteErr != nil {
@@ -153,8 +222,8 @@ func topicDone(ctx context.Context, client *client.Client, meetingID int) (err e
 		}
 	}()
 
-	if err := toggleWorkerTopic(ctx, client, topicID); err != nil {
-		return fmt.Errorf("toggle topic: %w", err)
+	if err := toggleWorkerAgendaItem(ctx, client, aid); err != nil {
+		return fmt.Errorf("toggle agenda item: %w", err)
 	}
 
 	return nil
@@ -184,13 +253,57 @@ func createWorkerTopic(ctx context.Context, client *client.Client, meetingID int
 	return respBody.Results[0][0].TopicID, nil
 }
 
-func toggleWorkerTopic(ctx context.Context, client *client.Client, topicID int) error {
-	toState := "true"
+func agendaID(ctx context.Context, client *client.Client, topicID int) (int, error) {
+	key := fmt.Sprintf("topic/%d/agenda_item_id", topicID)
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		"GET",
+		fmt.Sprintf("/system/autoupdate?k=%s&single=1", key),
+		nil,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("creating request: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var body map[string]json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return 0, fmt.Errorf("decoding body: %w", err)
+	}
+
+	val, ok := body[key]
+	if !ok {
+		return 0, fmt.Errorf("topic %d does not exist", topicID)
+	}
+
+	var agendaID int
+	if err := json.Unmarshal(val, &agendaID); err != nil {
+		return 0, fmt.Errorf("decoding agenda id: %w", err)
+	}
+
+	return agendaID, nil
+}
+
+func boolToStr(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
+func toggleWorkerAgendaItem(ctx context.Context, client *client.Client, topicID int) error {
+	toState := true
 	for {
 		body := fmt.Sprintf(
 			`[{"action":"agenda_item.update","data":[{"id":%d,"closed":%s}]}]`,
 			topicID,
-			toState,
+			boolToStr(toState),
 		)
 
 		var respBody struct {
@@ -208,11 +321,7 @@ func toggleWorkerTopic(ctx context.Context, client *client.Client, topicID int) 
 			return fmt.Errorf("backend returned no success")
 		}
 
-		if toState == "true" {
-			toState = "false"
-		} else {
-			toState = "true"
-		}
+		toState = !toState
 	}
 }
 

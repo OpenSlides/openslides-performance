@@ -19,6 +19,10 @@ import (
 
 // Run runs the command.
 func (o Options) Run(ctx context.Context, cfg config.Config) error {
+	if o.Body == "" {
+		o.Body = `[{"collection":"organization","ids":[1],"fields":{"committee_ids":{"type":"relation-list","collection":"committee","fields":{"name":null}}}}]`
+	}
+
 	c, err := client.New(cfg)
 	if err != nil {
 		return fmt.Errorf("creating client: %w", err)
