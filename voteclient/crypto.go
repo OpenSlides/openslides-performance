@@ -103,7 +103,7 @@ func encrypt(random io.Reader, publicKey []byte, plaintext []byte) ([]byte, erro
 	}
 
 	hkdf := hkdf.New(sha256.New, sharedSecred, nil, nil)
-	key := make([]byte, 16)
+	key := make([]byte, pubKeySize)
 	if _, err := io.ReadFull(hkdf, key); err != nil {
 		return nil, fmt.Errorf("generate key with hkdf: %w", err)
 	}
