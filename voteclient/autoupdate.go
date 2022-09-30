@@ -13,12 +13,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func autoupdateConnect(cli *client.Client, request string, local bool) tea.Cmd {
+func autoupdateConnect(cli *client.Client, request string) tea.Cmd {
 	return func() tea.Msg {
 		url := "/system/autoupdate"
-		if local {
-			url = "http://localhost:9012" + url
-		}
 
 		req, err := http.NewRequest("GET", url, strings.NewReader(request))
 		if err != nil {
@@ -104,6 +101,7 @@ func autoupdateRequest(userID int, pollID int) string {
 		[]string{
 			autoupdateRequestPart("user", userID, user{}),
 			autoupdateRequestPart("poll", pollID, poll{}),
+			autoupdateRequestPart("organization", 1, organization{}),
 		},
 		",",
 	) + "]"

@@ -4,7 +4,6 @@ package voteclient
 type Options struct {
 	PollID  int    `arg:"" help:"ID of the poll."`
 	MainKey string `help:"Public main key from vote decrypt as base64." short:"k"`
-	Local   bool   `help:"For local development."`
 }
 
 // Help returns the help message

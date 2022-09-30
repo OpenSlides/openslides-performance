@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 
@@ -25,8 +26,46 @@ func encryptVote(vote string, mainKey, pollKey, keySig []byte) (string, error) {
 		return "", fmt.Errorf("encrypt vote: %w", err)
 	}
 
-	return string(encrypted), nil
+	encoded, err := json.Marshal(encrypted)
+	if err != nil {
+		return "", fmt.Errorf("encode vote: %w", err)
+	}
 
+	return string(encoded), nil
+}
+
+func verifyPollResults(mainKey []byte, poll poll, domain string, token string) error {
+	// Check that the poll Key was signed with the main key.
+	if !verify(mainKey, []byte(poll.VotesRaw), poll.VotesSignature) {
+		return fmt.Errorf("signature for poll results do not match")
+	}
+
+	var value struct {
+		ID    string `json:"id"`
+		Votes []struct {
+			Token string `json:"token"`
+		} `json:"votes"`
+	}
+	if err := json.Unmarshal([]byte(poll.VotesRaw), &value); err != nil {
+		return fmt.Errorf("decoding vote values: %w", err)
+	}
+
+	qualifiedID := fmt.Sprintf("%s/%d", domain, poll.ID)
+	if value.ID != qualifiedID {
+		return fmt.Errorf("results are for poll %s, expected %s", value.ID, qualifiedID)
+	}
+
+	if token == "" {
+		return nil
+	}
+
+	for _, vote := range value.Votes {
+		if vote.Token == token {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("can not find my token in the results")
 }
 
 const (
