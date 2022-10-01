@@ -12,12 +12,12 @@ import (
 	"net/http/httputil"
 	"net/url"
 
-	"github.com/OpenSlides/openslides-performance/internal/config"
+	"github.com/OpenSlides/openslides-performance/client"
 )
 
 const prefix = "request:"
 
-func (o record) Run(ctx context.Context, cfg config.Config) error {
+func (o record) Run(ctx context.Context, cfg client.Config) error {
 	target, err := url.Parse(cfg.Addr())
 	if err != nil {
 		return fmt.Errorf("parse url: %w", err)

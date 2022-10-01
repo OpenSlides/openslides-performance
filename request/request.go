@@ -9,12 +9,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/OpenSlides/openslides-performance/internal/client"
-	"github.com/OpenSlides/openslides-performance/internal/config"
+	"github.com/OpenSlides/openslides-performance/client"
 )
 
 // Run sends the request.
-func (o Options) Run(ctx context.Context, cfg config.Config) error {
+func (o Options) Run(ctx context.Context, cfg client.Config) error {
 	c, err := client.New(cfg)
 	if err != nil {
 		return fmt.Errorf("creating client: %w", err)

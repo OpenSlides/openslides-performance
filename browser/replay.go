@@ -10,14 +10,13 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/OpenSlides/openslides-performance/internal/client"
-	"github.com/OpenSlides/openslides-performance/internal/config"
+	"github.com/OpenSlides/openslides-performance/client"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ostcar/topic"
 	"golang.org/x/sync/errgroup"
 )
 
-func (o replay) Run(ctx context.Context, cfg config.Config) error {
+func (o replay) Run(ctx context.Context, cfg client.Config) error {
 	app := tea.NewProgram(initialModel(o.Amount))
 
 	go func() {
@@ -51,7 +50,7 @@ type sender interface {
 // to be sent.
 //
 // The function blocks until an error happens or the context get closed.
-func multiBrowser(ctx context.Context, cfg config.Config, amount int, send sender, r io.Reader) error {
+func multiBrowser(ctx context.Context, cfg client.Config, amount int, send sender, r io.Reader) error {
 	cli, err := client.New(cfg)
 	if err != nil {
 		return fmt.Errorf("create client: %w", err)

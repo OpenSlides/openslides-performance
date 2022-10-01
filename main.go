@@ -10,9 +10,9 @@ import (
 
 	"github.com/OpenSlides/openslides-performance/backendaction"
 	"github.com/OpenSlides/openslides-performance/browser"
+	"github.com/OpenSlides/openslides-performance/client"
 	"github.com/OpenSlides/openslides-performance/connect"
 	"github.com/OpenSlides/openslides-performance/createusers"
-	"github.com/OpenSlides/openslides-performance/internal/config"
 	"github.com/OpenSlides/openslides-performance/request"
 	"github.com/OpenSlides/openslides-performance/vote"
 	"github.com/OpenSlides/openslides-performance/work"
@@ -52,7 +52,7 @@ func interruptContext() (context.Context, context.CancelFunc) {
 }
 
 var cli struct {
-	config.Config
+	client.Config
 
 	BackendAction backendaction.Options `cmd:"" help:"Calls a backend action multiple times."`
 	Browser       browser.Options       `cmd:"" help:"Simulates a browser."`

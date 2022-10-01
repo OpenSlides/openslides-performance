@@ -11,14 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OpenSlides/openslides-performance/internal/client"
-	"github.com/OpenSlides/openslides-performance/internal/config"
+	"github.com/OpenSlides/openslides-performance/client"
 	"github.com/vbauerster/mpb/v7"
 	"github.com/vbauerster/mpb/v7/decor"
 )
 
 // Run runs the command.
-func (o Options) Run(ctx context.Context, cfg config.Config) error {
+func (o Options) Run(ctx context.Context, cfg client.Config) error {
 	if o.Body == "" {
 		o.Body = `[{"collection":"organization","ids":[1],"fields":{"committee_ids":{"type":"relation-list","collection":"committee","fields":{"name":null}}}}]`
 	}

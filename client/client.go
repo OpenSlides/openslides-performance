@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,13 +13,11 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"github.com/OpenSlides/openslides-performance/internal/config"
 )
 
 // Client holds the connection to the OpenSlides server.
 type Client struct {
-	cfg        config.Config
+	cfg        Config
 	httpClient *http.Client
 
 	authCookie *http.Cookie
@@ -27,7 +26,7 @@ type Client struct {
 }
 
 // New initializes a new client.
-func New(cfg config.Config) (*Client, error) {
+func New(cfg Config) (*Client, error) {
 	var dialContext func(ctx context.Context, network, addr string) (net.Conn, error)
 	if cfg.IPv4 {
 		var zeroDialer net.Dialer
@@ -91,9 +90,12 @@ func (c *Client) LoginWithCredentials(ctx context.Context, username, password st
 	var resp *http.Response
 	for retry := 0; retry < 100; retry++ {
 		resp, err = checkStatus(c.httpClient.Do(req))
-		if err == nil {
+
+		var errStatus HTTPStatusError
+		if errors.As(err, &errStatus) && errStatus.StatusCode == 403 || err == nil {
 			break
 		}
+
 		time.Sleep(time.Second)
 	}
 	if err != nil {
@@ -158,7 +160,18 @@ func checkStatus(resp *http.Response, err error) (*http.Response, error) {
 			body = []byte("[can not read body]")
 		}
 		resp.Body.Close()
-		return nil, fmt.Errorf("got status %s: %s", resp.Status, body)
+		return nil, HTTPStatusError{StatusCode: resp.StatusCode, Body: body}
 	}
 	return resp, nil
+}
+
+// HTTPStatusError is returned, when the http status of a client request is
+// something else then in the 200er.
+type HTTPStatusError struct {
+	StatusCode int
+	Body       []byte
+}
+
+func (err HTTPStatusError) Error() string {
+	return fmt.Sprintf("got status %s: %s", http.StatusText(err.StatusCode), err.Body)
 }

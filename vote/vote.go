@@ -13,13 +13,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OpenSlides/openslides-performance/internal/client"
-	"github.com/OpenSlides/openslides-performance/internal/config"
+	"github.com/OpenSlides/openslides-performance/client"
 	"github.com/vbauerster/mpb/v7"
 )
 
 // Run runs the command.
-func (o Options) Run(ctx context.Context, cfg config.Config) error {
+func (o Options) Run(ctx context.Context, cfg client.Config) error {
 	admin, err := client.New(cfg)
 	if err != nil {
 		return fmt.Errorf("create admin user: %w", err)

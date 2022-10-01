@@ -8,13 +8,12 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/OpenSlides/openslides-performance/internal/client"
-	"github.com/OpenSlides/openslides-performance/internal/config"
+	"github.com/OpenSlides/openslides-performance/client"
 	"golang.org/x/sync/errgroup"
 )
 
 // Run runs the command.
-func (o Options) Run(ctx context.Context, cfg config.Config) error {
+func (o Options) Run(ctx context.Context, cfg client.Config) error {
 	workFunc := topicDone
 	switch o.Strategy {
 	case "topic-done":
