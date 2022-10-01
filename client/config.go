@@ -1,4 +1,4 @@
-package config
+package client
 
 // Config for all commands.
 type Config struct {

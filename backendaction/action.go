@@ -9,13 +9,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/OpenSlides/openslides-performance/internal/client"
-	"github.com/OpenSlides/openslides-performance/internal/config"
+	"github.com/OpenSlides/openslides-performance/client"
 	"github.com/google/uuid"
 )
 
 // Run runs the command.
-func (o Options) Run(ctx context.Context, cfg config.Config) error {
+func (o Options) Run(ctx context.Context, cfg client.Config) error {
 	c, err := client.New(cfg)
 	if err != nil {
 		return fmt.Errorf("creating client: %w", err)
