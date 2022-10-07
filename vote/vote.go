@@ -3,6 +3,7 @@ package vote
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/OpenSlides/openslides-performance/client"
+	"github.com/OpenSlides/vote-decrypt/crypto"
 	"github.com/vbauerster/mpb/v7"
 )
 
@@ -27,7 +29,7 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 		return fmt.Errorf("login admin: %w", err)
 	}
 
-	meetingID, optionID, err := pollData(ctx, admin, o.PollID)
+	meetingID, optionID, cryptKey, err := pollData(ctx, admin, o.PollID)
 	if err != nil {
 		return fmt.Errorf("getting poll data: %w", err)
 	}
@@ -60,55 +62,75 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 
 		start := time.Now()
 		url := "/system/vote"
-		massVotes(ctx, clients, url, o.PollID, optionID)
+		if err := massVotes(ctx, clients, url, o.PollID, optionID, cryptKey); err != nil {
+			return fmt.Errorf("mass vote: %w", err)
+		}
 		log.Printf("All Clients have voted in %v", time.Now().Sub(start))
 	}
 
 	return nil
 }
 
-func pollData(ctx context.Context, client *client.Client, pollID int) (meetingID, optionID int, err error) {
-	url := fmt.Sprintf("/system/autoupdate?single=1&k=poll/%d/meeting_id,poll/%d/option_ids", pollID, pollID)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+func pollData(ctx context.Context, client *client.Client, pollID int) (meetingID, optionID int, cryptKey []byte, err error) {
+	requestBody := fmt.Sprintf(
+		`[{
+			"collection":"poll",
+			"ids":[%d],
+			"fields": {
+				"meeting_id": null,
+				"option_ids": null,
+				"crypt_key":null
+			}
+		}]`,
+		pollID,
+	)
+	req, err := http.NewRequestWithContext(ctx, "GET", "/system/autoupdate?single=1", strings.NewReader(requestBody))
 	if err != nil {
-		return 0, 0, fmt.Errorf("building request: %w", err)
+		return 0, 0, nil, fmt.Errorf("building request: %w", err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, 0, fmt.Errorf("getting response: %w", err)
+		return 0, 0, nil, fmt.Errorf("getting response: %w", err)
 	}
 	defer resp.Body.Close()
 
 	var data map[string]json.RawMessage
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return 0, 0, fmt.Errorf("decoding response body: %w", err)
+		return 0, 0, nil, fmt.Errorf("decoding response body: %w", err)
 	}
 
 	rawMeetingID, ok := data[fmt.Sprintf("poll/%d/meeting_id", pollID)]
 	if !ok {
-		return 0, 0, fmt.Errorf("meeting_id not in response, got %v", dataKeys(data))
+		return 0, 0, nil, fmt.Errorf("meeting_id not in response, got %v", dataKeys(data))
 	}
 
 	rawOptionIDs, ok := data[fmt.Sprintf("poll/%d/option_ids", pollID)]
 	if !ok {
-		return 0, 0, fmt.Errorf("option_ids not in response, got %v", dataKeys(data))
+		return 0, 0, nil, fmt.Errorf("option_ids not in response, got %v", dataKeys(data))
 	}
 
 	if err := json.Unmarshal(rawMeetingID, &meetingID); err != nil {
-		return 0, 0, fmt.Errorf("decoding meeting_id from %q: %w", rawMeetingID, err)
+		return 0, 0, nil, fmt.Errorf("decoding meeting_id from %q: %w", rawMeetingID, err)
 	}
 
 	var optionIDs []int
 	if err := json.Unmarshal(rawOptionIDs, &optionIDs); err != nil {
-		return 0, 0, fmt.Errorf("decoding meeting_id from %q: %w", rawMeetingID, err)
+		return 0, 0, nil, fmt.Errorf("decoding meeting_id from %q: %w", rawMeetingID, err)
 	}
 
 	if len(optionIDs) != 1 {
-		return 0, 0, fmt.Errorf("option_ids is %q, expected one value", rawOptionIDs)
+		return 0, 0, nil, fmt.Errorf("option_ids is %q, expected one value", rawOptionIDs)
 	}
 
-	return meetingID, optionIDs[0], nil
+	cryptKeyRaw := data[fmt.Sprintf("poll/%d/crypt_key", pollID)]
+	if cryptKeyRaw != nil {
+		if err := json.Unmarshal(cryptKeyRaw, &cryptKey); err != nil {
+			return 0, 0, nil, fmt.Errorf("decoding crypt key: %w", err)
+		}
+	}
+
+	return meetingID, optionIDs[0], cryptKey, nil
 }
 
 func dataKeys(m map[string]json.RawMessage) []string {
@@ -144,8 +166,23 @@ func massLogin(ctx context.Context, clients []*client.Client, meetingID int) {
 	progress.Wait()
 }
 
-func massVotes(ctx context.Context, clients []*client.Client, url string, pollID, optionID int) {
-	payload := fmt.Sprintf(`{"value": {"%d": "Y"}}`, optionID)
+func massVotes(ctx context.Context, clients []*client.Client, url string, pollID, optionID int, cryptKey []byte) error {
+	voteValue := fmt.Sprintf(`{"%d": "Y"}`, optionID)
+	if cryptKey != nil {
+		encrypted, err := crypto.Encrypt(rand.Reader, cryptKey, []byte(voteValue))
+		if err != nil {
+			return fmt.Errorf("encrypt vote: %w", err)
+		}
+
+		encoded, err := json.Marshal(encrypted)
+		if err != nil {
+			return fmt.Errorf("encode vote: %w", err)
+		}
+
+		voteValue = string(encoded)
+	}
+
+	payload := fmt.Sprintf(`{"value": %s}`, voteValue)
 
 	var wgVote sync.WaitGroup
 	progress := mpb.New(mpb.WithWaitGroup(&wgVote))
@@ -177,4 +214,5 @@ func massVotes(ctx context.Context, clients []*client.Client, url string, pollID
 		}(i)
 	}
 	progress.Wait()
+	return nil
 }

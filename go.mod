@@ -3,6 +3,7 @@ module github.com/OpenSlides/openslides-performance
 go 1.19
 
 require (
+	github.com/OpenSlides/vote-decrypt v0.0.0-20220930234107-cfdc8c46591b
 	github.com/alecthomas/kong v0.6.1
 	github.com/charmbracelet/bubbletea v0.22.1
 	github.com/google/uuid v1.3.0
@@ -24,6 +25,7 @@ require (
 	github.com/muesli/reflow v0.3.0 // indirect
 	github.com/muesli/termenv v0.11.1-0.20220212125758-44cd13922739 // indirect
 	github.com/rivo/uniseg v0.3.4 // indirect
+	golang.org/x/crypto v0.0.0-20220926161630-eccd6366d1be // indirect
 	golang.org/x/sys v0.0.0-20220829200755-d48e67d00261 // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
 	golang.org/x/text v0.3.7 // indirect
