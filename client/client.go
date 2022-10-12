@@ -78,6 +78,11 @@ func (c *Client) Login(ctx context.Context) error {
 // LoginWithCredentials is like Login but uses the given credentials instead of
 // config.
 func (c *Client) LoginWithCredentials(ctx context.Context, username, password string) error {
+	if c.cfg.FakeAuth {
+		c.userID = 1
+		return nil
+	}
+
 	url := c.cfg.Addr() + "/system/auth/login"
 	payload := fmt.Sprintf(`{"username": "%s", "password": "%s"}`, username, password)
 
@@ -96,7 +101,11 @@ func (c *Client) LoginWithCredentials(ctx context.Context, username, password st
 			break
 		}
 
-		time.Sleep(time.Second)
+		select {
+		case <-time.After(time.Second):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("sending login request: %w", err)
