@@ -18,8 +18,22 @@ import (
 
 // Run runs the command.
 func (o Options) Run(ctx context.Context, cfg client.Config) error {
-	if o.Body == "" {
-		o.Body = `[{"collection":"organization","ids":[1],"fields":{"committee_ids":{"type":"relation-list","collection":"committee","fields":{"name":null}}}}]`
+	if o.Body != "" && o.BodyFile != nil {
+		return fmt.Errorf("--body and --body-file are set at the same time. Only one is allowed")
+	}
+
+	body := `[{"collection":"organization","ids":[1],"fields":{"committee_ids":{"type":"relation-list","collection":"committee","fields":{"name":null}}}}]`
+	if o.BodyFile != nil {
+		bodyFileContent, err := io.ReadAll(o.BodyFile)
+		if err != nil {
+			return fmt.Errorf("reading body file: %w", err)
+		}
+
+		body = string(bodyFileContent)
+	}
+
+	if o.Body != "" {
+		body = o.Body
 	}
 
 	c, err := client.New(cfg)
@@ -47,7 +61,7 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 					skipFirstAttr = "&skip_first=1"
 				}
 
-				r, err = keepOpen(ctx, c, "/system/autoupdate?compress=1"+skipFirstAttr, strings.NewReader(o.Body))
+				r, err = keepOpen(ctx, c, "/system/autoupdate?compress=1"+skipFirstAttr, strings.NewReader(body))
 				if err != nil {
 					if ctx.Err() != nil {
 						return

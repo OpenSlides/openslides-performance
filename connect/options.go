@@ -1,10 +1,13 @@
 package connect
 
+import "os"
+
 // Options is the meta information for the cli.
 type Options struct {
-	Amount    int    `help:"Amount of connections to use." short:"n" default:"10"`
-	Body      string `help:"Request Body." short:"b"`
-	SkipFirst bool   `help:"Use skip first flag to save traffic."`
+	Amount    int      `help:"Amount of connections to use." short:"n" default:"10"`
+	Body      string   `help:"Request Body." short:"b"`
+	BodyFile  *os.File `help:"Request Body from a file. Use - for stdin"`
+	SkipFirst bool     `help:"Use skip first flag to save traffic."`
 }
 
 // Help returns the help message
