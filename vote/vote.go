@@ -45,7 +45,7 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 
 	log.Printf("Login %d clients", len(clients))
 	start := time.Now()
-	massLogin(ctx, clients, meetingID)
+	MassLogin(ctx, clients, meetingID)
 	log.Printf("All clients logged in %v", time.Now().Sub(start))
 
 	first := true
@@ -141,7 +141,8 @@ func dataKeys(m map[string]json.RawMessage) []string {
 	return keys
 }
 
-func massLogin(ctx context.Context, clients []*client.Client, meetingID int) {
+// MassLogin logs in a list of clients.
+func MassLogin(ctx context.Context, clients []*client.Client, meetingID int) {
 	var wgLogin sync.WaitGroup
 	progress := mpb.New(mpb.WithWaitGroup(&wgLogin))
 	loginBar := progress.AddBar(int64(len(clients)))
@@ -153,7 +154,10 @@ func massLogin(ctx context.Context, clients []*client.Client, meetingID int) {
 
 			client := clients[i]
 
-			username := fmt.Sprintf("m%ddummy%d", meetingID, i+1)
+			username := fmt.Sprintf("dummy%d", i+1)
+			if meetingID > 0 {
+				username = fmt.Sprintf("m%ddummy%d", meetingID, i+1)
+			}
 
 			if err := client.LoginWithCredentials(ctx, username, "pass"); err != nil {
 				log.Printf("Login failed for user %s: %v", username, err)
