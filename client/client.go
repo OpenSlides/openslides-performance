@@ -182,5 +182,5 @@ type HTTPStatusError struct {
 }
 
 func (err HTTPStatusError) Error() string {
-	return fmt.Sprintf("got status %s: %s", http.StatusText(err.StatusCode), err.Body)
+	return fmt.Sprintf("got status %d %s: %s", err.StatusCode, http.StatusText(err.StatusCode), err.Body)
 }

@@ -1,12 +1,16 @@
 package request
 
-import "net/url"
+import (
+	"net/url"
+	"os"
+)
 
 // Options is the meta information for the cli.
 type Options struct {
 	URL *url.URL `arg:"" help:"URL for the request"`
 
-	Body string `help:"HTTP Post body." short:"b"`
+	Body     string   `help:"HTTP Post body." short:"b"`
+	BodyFile *os.File `help:"Request Body from a file. Use - for stdin"`
 }
 
 // Help returns the help message

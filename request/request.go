@@ -14,6 +14,15 @@ import (
 
 // Run sends the request.
 func (o Options) Run(ctx context.Context, cfg client.Config) error {
+	if o.BodyFile != nil {
+		bodyFileContent, err := io.ReadAll(o.BodyFile)
+		if err != nil {
+			return fmt.Errorf("reading body file: %w", err)
+		}
+
+		o.Body = string(bodyFileContent)
+	}
+
 	c, err := client.New(cfg)
 	if err != nil {
 		return fmt.Errorf("creating client: %w", err)

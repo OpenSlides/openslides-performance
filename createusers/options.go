@@ -5,6 +5,7 @@ type Options struct {
 	Amount    int `help:"Amount of user to be created." short:"n" default:"10"`
 	MeetingID int `help:"If set, put the user in the delegated group of this meeting." short:"m"`
 	Batch     int `help:"Number of users to create with one request. Default is all at once." short:"b"`
+	FirstID   int `help:"First id to use. Usefull when additional users should be created." default:"1"`
 }
 
 // Help returns the help message
