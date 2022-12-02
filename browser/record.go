@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"strings"
 
 	"github.com/OpenSlides/openslides-performance/client"
 )
@@ -29,6 +31,7 @@ func (o record) Run(ctx context.Context, cfg client.Config) error {
 	}
 	proxy.FlushInterval = -1
 	director := proxy.Director
+	count := 0
 	proxy.Director = func(r *http.Request) {
 		director(r)
 		var body []byte
@@ -44,7 +47,42 @@ func (o record) Run(ctx context.Context, cfg client.Config) error {
 			fmt.Printf("request with newline: %s", r.URL.RequestURI())
 			return
 		}
-		fmt.Printf("%s %s %s %s\n", prefix, r.Method, r.URL.RequestURI(), body)
+		if o.Filter != "" && !strings.Contains(r.URL.RequestURI(), o.Filter) {
+			return
+		}
+
+		fmt.Printf("%s %s %s\n", prefix, r.Method, r.URL.RequestURI())
+		var out bytes.Buffer
+		if len(body) > 0 {
+			if o.IndentJson {
+				error := json.Indent(&out, body, "", "  ")
+				if error != nil {
+					fmt.Println("JSON parse error: ", error)
+					return
+				}
+			} else {
+				out = *bytes.NewBuffer(body)
+			}
+			if o.Output != "" {
+				fo, err := os.Create(o.Output + "_" + fmt.Sprintf("%d", count) + ".json")
+				count++
+				if err != nil {
+					fmt.Printf("Cannot open file for write: %v", err)
+					return
+				}
+				// close fo on exit and check for its returned error
+				defer func() {
+					if err := fo.Close(); err != nil {
+						fmt.Printf("Error closing file: %v", err)
+					}
+				}()
+				if _, err := fo.Write(out.Bytes()); err != nil {
+					panic(err)
+				}
+			} else {
+				fmt.Printf("Payload:\n%s\n\n", &out)
+			}
+		}
 	}
 
 	cert, err := selfSingedCert()
