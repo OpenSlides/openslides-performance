@@ -64,7 +64,7 @@ func (o record) Run(ctx context.Context, cfg client.Config) error {
 				out = *bytes.NewBuffer(body)
 			}
 			if o.Output != "" {
-				fo, err := os.Create(o.Output + "_" + fmt.Sprintf("%d", count) + ".json")
+				fo, err := os.Create(fmt.Sprintf("%s_%d.json", o.Output, count))
 				count++
 				if err != nil {
 					fmt.Printf("Cannot open file for write: %v", err)
