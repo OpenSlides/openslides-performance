@@ -31,6 +31,7 @@ func (o record) Run(ctx context.Context, cfg client.Config) error {
 	director := proxy.Director
 	proxy.Director = func(r *http.Request) {
 		director(r)
+		r.Host = target.Host
 		var body []byte
 		if r.Body != nil {
 			body, _ = io.ReadAll(r.Body)
