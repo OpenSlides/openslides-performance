@@ -44,7 +44,12 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 		return fmt.Errorf("creating request: %w", err)
 	}
 
-	resp, err := c.Do(req)
+	do := c.Do
+	if o.NoBackendWorker {
+		do = c.DoRaw
+	}
+
+	resp, err := do(req)
 	if err != nil {
 		return fmt.Errorf("sending request: %w", err)
 	}
