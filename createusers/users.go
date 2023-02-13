@@ -64,7 +64,7 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 		eg.Go(func() error {
 			var users []string
 			for i := 0; i < o.Batch; i++ {
-				userID := b*(o.Batch) + i + 1
+				userID := b*(o.Batch) + i + o.FirstID
 				users = append(users, fmt.Sprintf(
 					`{
 							"username": "%sdummy%d",

@@ -1,6 +1,8 @@
 package client
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
@@ -11,8 +13,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
-	"time"
 )
 
 // Client holds the connection to the OpenSlides server.
@@ -50,6 +52,22 @@ func New(cfg Config) (*Client, error) {
 
 // Do is like http.Do but uses the credentials.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
+	task, err := c.DoTask(req)
+	if err != nil {
+		return nil, err
+	}
+
+	select {
+	case <-task.Done():
+	case <-req.Context().Done():
+		return nil, req.Context().Err()
+	}
+
+	return task.Result()
+}
+
+// DoRaw is like Do but without backand worker.
+func (c *Client) DoRaw(req *http.Request) (*http.Response, error) {
 	req.Header.Set("authentication", c.authToken)
 	req.Header.Add("cookie", c.authCookie.String())
 
@@ -67,6 +85,144 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	}
 
 	return checkStatus(c.httpClient.Do(req))
+}
+
+// DoTask is like Do, but returns a Task.
+func (c *Client) DoTask(req *http.Request) (*Task, error) {
+	resp, err := c.DoRaw(req)
+	if err != nil {
+		return nil, fmt.Errorf("sending request: %w", err)
+	}
+
+	if resp.StatusCode == 202 {
+		return c.backendWorker(req.Context(), resp)
+	}
+
+	closedCh := make(chan struct{})
+	close(closedCh)
+	return &Task{
+		resp: resp,
+		done: closedCh,
+	}, nil
+
+}
+
+func (c *Client) backendWorker(ctx context.Context, resp *http.Response) (*Task, error) {
+	awID, err := actionWorkerID(resp)
+	if err != nil {
+		return nil, fmt.Errorf("unpacking action worker id: %w", err)
+	}
+
+	autoUpdateResp, err := c.sendAutoupdate(ctx, awID)
+	if err != nil {
+		return nil, fmt.Errorf("requesting action worker from autoupdate: %w", err)
+	}
+
+	task := Task{
+		done: make(chan struct{}),
+	}
+
+	go func() {
+		task.setDone(parseAutoupdate(awID, autoUpdateResp))
+		autoUpdateResp.Body.Close()
+	}()
+
+	return &task, nil
+}
+
+// actionWorkerID gets the id of the action_worker from a backend response.
+//
+// The backend packs this in a very strange way.
+func actionWorkerID(resp *http.Response) (int, error) {
+	var body struct {
+		Results [][]struct {
+			FQID string `json:"fqid"`
+		} `json:"results"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return 0, fmt.Errorf("decode backend response: %w", err)
+	}
+
+	outer := body.Results
+	if len(outer) == 0 {
+		return 0, fmt.Errorf("invalid response, no outer list")
+	}
+
+	inner := outer[0]
+	if len(inner) == 0 {
+		return 0, fmt.Errorf("invalid response, no inner list")
+	}
+
+	collection, idStr, found := strings.Cut(inner[0].FQID, "/")
+	if !found || collection != "action_worker" {
+		return 0, fmt.Errorf("invalid response, wront fqid %s", inner[0].FQID)
+	}
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid response, wront id %s", idStr)
+	}
+
+	return id, nil
+}
+
+// sendAutoupdate requests an action worker from the autoupdate service.
+func (c *Client) sendAutoupdate(ctx context.Context, awID int) (*http.Response, error) {
+	autoUpdateReq, err := http.NewRequestWithContext(
+		ctx,
+		"GET",
+		"/system/autoupdate",
+		strings.NewReader(fmt.Sprintf(
+			`[{"collection":"action_worker","ids":[%d],"fields":{"state":null,"result":null}}]`,
+			awID,
+		)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	autoUpdateResp, err := checkStatus(c.Do(autoUpdateReq))
+	if err != nil {
+		return nil, fmt.Errorf("request action worker from autoupdate: %w", err)
+	}
+
+	return autoUpdateResp, nil
+}
+
+// parseAutoupdate parses the response from the autoupdate.
+//
+// blocks until the autoupdate either sends the status 'end' or 'aborted'.
+func parseAutoupdate(actionWorkerID int, autoupdateResp *http.Response) (*http.Response, error) {
+	stateKey := fmt.Sprintf("action_worker/%d/state", actionWorkerID)
+	resultKey := fmt.Sprintf("action_worker/%d/result", actionWorkerID)
+
+	var worker map[string]json.RawMessage
+
+	scanner := bufio.NewScanner(autoupdateResp.Body)
+	for scanner.Scan() {
+		if err := json.Unmarshal(scanner.Bytes(), &worker); err != nil {
+			return nil, fmt.Errorf("decoding autoupdate response: %w", err)
+		}
+
+		switch string(worker[stateKey]) {
+		case `"end"`:
+			fakeResp := http.Response{
+				StatusCode: 200,
+				Status:     http.StatusText(200),
+				Body:       io.NopCloser(bytes.NewReader(worker[resultKey])),
+			}
+			return &fakeResp, nil
+
+		case `"aborted"`:
+			return nil, ErrAbborted
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scanner failed: %w", err)
+	}
+
+	return nil, fmt.Errorf("autoupdate connection was broken")
 }
 
 // Login uses the username and password to login the client. Sets the returned
@@ -102,7 +258,7 @@ func (c *Client) LoginWithCredentials(ctx context.Context, username, password st
 		}
 
 		select {
-		case <-time.After(time.Second):
+		case <-c.cfg.RetryEventProvider():
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -182,5 +338,5 @@ type HTTPStatusError struct {
 }
 
 func (err HTTPStatusError) Error() string {
-	return fmt.Sprintf("got status %s: %s", http.StatusText(err.StatusCode), err.Body)
+	return fmt.Sprintf("got status %d %s: %s", err.StatusCode, http.StatusText(err.StatusCode), err.Body)
 }
