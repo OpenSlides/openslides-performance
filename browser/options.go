@@ -26,10 +26,11 @@ openslides-performance browser record | openslides-performance replay`
 }
 
 type record struct {
-	Port       int    `arg:"" help:"Port to use for the proxy. Default is 8080." default:"8080"`
-	Filter     string `help:"Filter the URL path" short:"f" default:""`
-	IndentJson bool   `help:"Pretty print json output." short:"i" default:"false"`
-	Output     string `help:"File prefix to write request bodies to separate files." short:"o" default:""`
+	Port   int    `arg:"" help:"Port to use for the proxy. Default is 8080." default:"8080"`
+	Filter string `help:"Filter the URL path" short:"f" default:""`
+	Files  string `help:"File prefix to write request bodies to separate files." short:"o" default:""`
+
+	count int
 }
 
 type replay struct {
