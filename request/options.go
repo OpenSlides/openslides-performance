@@ -9,8 +9,9 @@ import (
 type Options struct {
 	URL *url.URL `arg:"" help:"URL for the request"`
 
-	Body     string   `help:"HTTP Post body." short:"b"`
-	BodyFile *os.File `help:"Request Body from a file. Use - for stdin"`
+	Body            string   `help:"HTTP Post body." short:"b"`
+	BodyFile        *os.File `help:"Request Body from a file. Use - for stdin"`
+	NoBackendWorker bool     `help:"Disable automatic handeling of backend workers" short:"w"`
 }
 
 // Help returns the help message
