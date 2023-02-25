@@ -15,6 +15,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/quic-go/quic-go/http3"
 )
 
 // Client holds the connection to the OpenSlides server.
@@ -37,13 +39,26 @@ func New(cfg Config) (*Client, error) {
 		}
 	}
 
+	var transport http.RoundTripper = &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+		DialContext: dialContext,
+	}
+
+	if cfg.HTTP3 {
+		transport = &http3.RoundTripper{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+			// TODO: respect the IPv4 config
+		}
+	}
+
 	c := Client{
 		cfg: cfg,
 		httpClient: &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-				DialContext:     dialContext,
-			},
+			Transport: transport,
 		},
 	}
 
@@ -104,7 +119,6 @@ func (c *Client) DoTask(req *http.Request) (*Task, error) {
 		resp: resp,
 		done: closedCh,
 	}, nil
-
 }
 
 func (c *Client) backendWorker(ctx context.Context, resp *http.Response) (*Task, error) {
@@ -258,7 +272,7 @@ func (c *Client) LoginWithCredentials(ctx context.Context, username, password st
 		}
 
 		select {
-		case <-c.cfg.RetryEventProvider():
+		case <-c.cfg.RetryEvent():
 		case <-ctx.Done():
 			return ctx.Err()
 		}
