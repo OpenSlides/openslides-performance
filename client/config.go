@@ -12,6 +12,7 @@ type Config struct {
 	Password string `help:"Password to use for logged-in requests." short:"p" default:"superadmin"`
 	HTTP     bool   `help:"Use http instead of https. Default is https."`
 	IPv4     bool   `help:"Force IPv4 for requests." short:"4"`
+	HTTP3    bool   `help:"Force HTTP3" short:"3"`
 	FakeAuth bool   `help:"Do not login but expect user id 1."`
 
 	RetryEventProvider func() <-chan struct{} `kong:"-"`
