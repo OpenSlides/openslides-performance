@@ -12,7 +12,7 @@ type Options struct {
 func (o Options) Help() string {
 	return `The browser command contains of two sub commands. 'record' and 'replay'.
 
-'record' opens a local proxy. All requests to openslides are printed to 
+'record' opens a local proxy. All requests to openslides are printed to
 stdout. To do so, a self singed certificate is created.
 
 'replay' creates connections to OpenSlides by reading them from stdin.
@@ -26,7 +26,11 @@ openslides-performance browser record | openslides-performance replay`
 }
 
 type record struct {
-	Port int `arg:"" help:"Port to use for the proxy. Default is 8080." default:"8080"`
+	Port   int    `arg:"" help:"Port to use for the proxy. Default is 8080." default:"8080"`
+	Filter string `help:"Filter the URL path" short:"f" default:""`
+	Files  string `help:"File prefix to write request bodies to separate files." short:"o" default:""`
+
+	count int
 }
 
 type replay struct {

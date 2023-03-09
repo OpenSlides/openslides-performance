@@ -5,12 +5,15 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"strings"
 
 	"github.com/OpenSlides/openslides-performance/client"
 )
@@ -28,25 +31,40 @@ func (o record) Run(ctx context.Context, cfg client.Config) error {
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	proxy.FlushInterval = -1
+
 	director := proxy.Director
+	requestCh := make(chan request, 1)
 	proxy.Director = func(r *http.Request) {
 		director(r)
-		r.Host = target.Host
-		var body []byte
-		if r.Body != nil {
-			body, _ = io.ReadAll(r.Body)
-			r.Body = ioutil.NopCloser(bytes.NewReader(body))
-			dst := new(bytes.Buffer)
-			if err := json.Compact(dst, body); err == nil {
-				body = dst.Bytes()
-			}
-		}
-		if bytes.Contains(body, []byte("\n")) {
-			fmt.Printf("request with newline: %s", r.URL.RequestURI())
+
+		if o.Filter != "" && !strings.Contains(r.URL.RequestURI(), o.Filter) {
 			return
 		}
-		fmt.Printf("%s %s %s %s\n", prefix, r.Method, r.URL.RequestURI(), body)
+
+		var body []byte
+		if r.Body != nil {
+			body, err = io.ReadAll(r.Body)
+			if err != nil {
+				// Ignore a body that can not be read.
+				body = nil
+			}
+			r.Body = ioutil.NopCloser(bytes.NewReader(body))
+		}
+
+		requestCh <- request{
+			method: r.Method,
+			uri:    r.URL.RequestURI(),
+			body:   body,
+		}
 	}
+
+	go func() {
+		for req := range requestCh {
+			if err := o.handleRequest(req); err != nil {
+				fmt.Printf("Error handle request: %v\n", err)
+			}
+		}
+	}()
 
 	cert, err := selfSingedCert()
 	if err != nil {
@@ -77,6 +95,67 @@ func (o record) Run(ctx context.Context, cfg client.Config) error {
 	}
 
 	return nil
+}
+
+type request struct {
+	method string
+	uri    string
+	body   []byte
+}
+
+func (o *record) handleRequest(req request) (err error) {
+	if req.body != nil {
+		req.body, err = jsonReformat(req.body, o.Files != "")
+		if err != nil {
+			return fmt.Errorf("reformating body: %w", err)
+		}
+	}
+
+	if o.Files == "" {
+		fmt.Printf("%s %s %s %s\n", prefix, req.method, req.uri, req.body)
+		return nil
+	}
+
+	fmt.Printf("%s %s %s\n", prefix, req.method, req.uri)
+
+	if len(req.body) == 0 {
+		return nil
+	}
+
+	f, err := os.Create(fmt.Sprintf("%s_%d.json", o.Files, o.count))
+	if err != nil {
+		return fmt.Errorf("open output file: %w", err)
+
+	}
+
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("closing file: %w", closeErr))
+		}
+	}()
+
+	o.count++
+	if _, err := f.Write(req.body); err != nil {
+		return fmt.Errorf("write body: %w", err)
+	}
+
+	return nil
+}
+
+func jsonReformat(content []byte, indent bool) ([]byte, error) {
+	dst := new(bytes.Buffer)
+	if indent {
+		if err := json.Indent(dst, content, "", "  "); err != nil {
+			return nil, fmt.Errorf("indent: %w", err)
+		}
+		return dst.Bytes(), nil
+	}
+
+	if err := json.Compact(dst, content); err != nil {
+		return nil, fmt.Errorf("compact: %w", err)
+	}
+
+	return dst.Bytes(), nil
 }
 
 func selfSingedCert() (tls.Certificate, error) {
