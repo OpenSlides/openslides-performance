@@ -37,6 +37,7 @@ func (o record) Run(ctx context.Context, cfg client.Config) error {
 	proxy.Director = func(r *http.Request) {
 		director(r)
 
+		r.Host = target.Host
 		if o.Filter != "" && !strings.Contains(r.URL.RequestURI(), o.Filter) {
 			return
 		}
