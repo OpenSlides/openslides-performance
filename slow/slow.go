@@ -19,10 +19,6 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 		return fmt.Errorf("creating client: %w", err)
 	}
 
-	if err := c.Login(ctx); err != nil {
-		return fmt.Errorf("login client: %w", err)
-	}
-
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for i := 0; i < o.Amount; i++ {
