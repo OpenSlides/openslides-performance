@@ -24,7 +24,7 @@ func main() {
 	ctx, cancel := interruptContext()
 	defer cancel()
 
-	cliCtx := kong.Parse(&cli, kong.UsageOnError())
+	cliCtx := kong.Parse(&cli, kong.UsageOnError(), kong.Configuration(kong.JSON, "config.json"))
 	cliCtx.BindTo(ctx, (*context.Context)(nil))
 	cliCtx.Bind(cli.Config)
 	if err := cliCtx.Run(); err != nil {
