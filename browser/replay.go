@@ -45,6 +45,7 @@ func (o replay) Run(ctx context.Context, cfg client.Config) error {
 	})
 
 	if err := eg.Wait(); !errors.Is(err, context.Canceled) {
+		return err
 	}
 
 	return nil
@@ -75,6 +76,7 @@ func (o replay) loginUsers(ctx context.Context, cfg client.Config, app *tea.Prog
 	clients := make([]*client.Client, o.Amount)
 	for i := 0; i < o.Amount; i++ {
 		i := i
+
 		eg.Go(func() error {
 			username := strings.ReplaceAll(o.UserTemplate, "%i", strconv.Itoa(i+1))
 
@@ -87,6 +89,7 @@ func (o replay) loginUsers(ctx context.Context, cfg client.Config, app *tea.Prog
 				return fmt.Errorf("login client for %s: %w", username, err)
 			}
 
+			clients[i] = cli
 			app.Send(bMSGLogin)
 
 			return nil
