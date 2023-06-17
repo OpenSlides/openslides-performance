@@ -36,4 +36,5 @@ type record struct {
 type replay struct {
 	Amount   int      `help:"Amount browsers to simulare." short:"n" default:"10"`
 	Commands *os.File `arg:"" help:"File with the replay commands. Use - for stdin. stdin is the default." default:"-"`
+	Close    bool     `help:"Exit when all connections are closed"`
 }

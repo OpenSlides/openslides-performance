@@ -17,7 +17,7 @@ import (
 )
 
 func (o replay) Run(ctx context.Context, cfg client.Config) error {
-	app := tea.NewProgram(initialModel(o.Amount))
+	app := tea.NewProgram(initialModel(o.Amount, o.Close))
 
 	go func() {
 		defer o.Commands.Close()
@@ -168,11 +168,13 @@ type multiBrowserModel struct {
 	totalConn   int
 	browsers    int
 	errors      []error
+	autoClose   bool
 }
 
-func initialModel(browsers int) multiBrowserModel {
+func initialModel(browsers int, autoclose bool) multiBrowserModel {
 	return multiBrowserModel{
-		browsers: browsers,
+		browsers:  browsers,
+		autoClose: autoclose,
 	}
 }
 
@@ -193,6 +195,9 @@ func (m multiBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.totalConn++
 		case bMSGDisconnect:
 			m.currentConn--
+			if m.autoClose && m.currentConn <= 0 {
+				return m, tea.Quit
+			}
 		case bMSGClose:
 			m.browsers--
 		}
