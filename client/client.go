@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/quic-go/quic-go/http3"
 )
@@ -59,6 +60,7 @@ func New(cfg Config) (*Client, error) {
 		cfg: cfg,
 		httpClient: &http.Client{
 			Transport: transport,
+			Timeout:   3 * time.Second,
 		},
 	}
 
@@ -265,6 +267,7 @@ func (c *Client) LoginWithCredentials(ctx context.Context, username, password st
 	var resp *http.Response
 	for retry := 0; retry < 100; retry++ {
 		resp, err = checkStatus(c.httpClient.Do(req))
+		// TODO: Show some sort of process in case of timeout
 
 		var errStatus HTTPStatusError
 		if errors.As(err, &errStatus) && errStatus.StatusCode == 403 || err == nil {

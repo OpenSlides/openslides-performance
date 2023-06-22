@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/OpenSlides/openslides-performance/client"
@@ -17,25 +17,90 @@ import (
 )
 
 func (o replay) Run(ctx context.Context, cfg client.Config) error {
-	app := tea.NewProgram(initialModel(o.Amount, o.Close))
+	eg, ctx := errgroup.WithContext(ctx)
 
-	go func() {
-		defer o.Commands.Close()
-		if err := multiBrowser(ctx, cfg, o.Amount, app, o.Commands); err != nil {
+	app := tea.NewProgram(initialModel(o.Amount, o.Close), tea.WithContext(ctx), tea.WithoutSignalHandler())
+
+	eg.Go(func() error {
+		clients, err := o.loginUsers(ctx, cfg, app)
+		if err != nil {
+			return fmt.Errorf("login users: %w", err)
+		}
+
+		if err := multiBrowser(ctx, clients, app, o.Commands); err != nil {
 			if !errors.Is(err, context.Canceled) {
-				log.Println(fmt.Errorf("creating multi browser: %w", err))
-				return
+				return fmt.Errorf("multi browser: %w", err)
 			}
 		}
 
-		return
-	}()
+		return nil
+	})
 
-	if err := app.Start(); err != nil {
-		return fmt.Errorf("running bubble tea app: %w", err)
+	eg.Go(func() error {
+		if _, err := app.Run(); err != nil {
+			return fmt.Errorf("bubble tea app: %w", err)
+		}
+
+		return nil
+	})
+
+	if err := eg.Wait(); !errors.Is(err, context.Canceled) {
+		return err
 	}
 
 	return nil
+}
+
+func (o replay) loginUsers(ctx context.Context, cfg client.Config, app *tea.Program) ([]*client.Client, error) {
+	if o.UserTemplate == "" {
+		cli, err := client.New(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("create client: %w", err)
+		}
+
+		if err := cli.Login(ctx); err != nil {
+			return nil, fmt.Errorf("login client: %w", err)
+		}
+
+		clients := make([]*client.Client, o.Amount)
+		for i := 0; i < o.Amount; i++ {
+			clients[i] = cli
+		}
+
+		app.Send(bMSGLogin)
+		return clients, nil
+	}
+
+	eg, ctx := errgroup.WithContext(ctx)
+
+	clients := make([]*client.Client, o.Amount)
+	for i := 0; i < o.Amount; i++ {
+		i := i
+
+		eg.Go(func() error {
+			username := strings.ReplaceAll(o.UserTemplate, "%i", strconv.Itoa(i+1))
+
+			cli, err := client.New(cfg)
+			if err != nil {
+				return fmt.Errorf("create client for %s: %w", username, err)
+			}
+
+			if err := cli.LoginWithCredentials(ctx, username, cfg.Password); err != nil {
+				return fmt.Errorf("login client for %s: %w", username, err)
+			}
+
+			clients[i] = cli
+			app.Send(bMSGLogin)
+
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	return clients, nil
 }
 
 type sender interface {
@@ -44,29 +109,18 @@ type sender interface {
 
 // multiBrowser simulates multiple browsers.
 //
-// amout in the numbers of browsers to sumulate.
-//
 // r is a reader with controll lines, that tell each browsers what requests have
 // to be sent.
 //
 // The function blocks until an error happens or the context get closed.
-func multiBrowser(ctx context.Context, cfg client.Config, amount int, send sender, r io.Reader) error {
-	cli, err := client.New(cfg)
-	if err != nil {
-		return fmt.Errorf("create client: %w", err)
-	}
-
-	if err := cli.Login(ctx); err != nil {
-		return fmt.Errorf("login client: %w", err)
-	}
-
+func multiBrowser(ctx context.Context, clients []*client.Client, send sender, r io.Reader) error {
 	top := topic.New[string]()
 	eg, ctx := errgroup.WithContext(ctx)
-	for i := 0; i < amount; i++ {
-		nr := i
+	for i := 0; i < len(clients); i++ {
+		i := i
 		eg.Go(func() error {
-			if err := browser(ctx, cli, top, send); err != nil {
-				return fmt.Errorf("browser %d failed: %w", nr, err)
+			if err := browser(ctx, clients[i], top, send); err != nil {
+				return fmt.Errorf("browser %d failed: %w", i, err)
 			}
 			return nil
 		})
@@ -98,7 +152,8 @@ func multiBrowser(ctx context.Context, cfg client.Config, amount int, send sende
 type browserMsg int
 
 const (
-	bMSGConnect browserMsg = iota
+	bMSGLogin browserMsg = iota
+	bMSGConnect
 	bMSGDisconnect
 	bMSGClose
 	bMSGError
@@ -164,6 +219,7 @@ func browser(ctx context.Context, cli *client.Client, top *topic.Topic[string], 
 // Bubble tea app
 
 type multiBrowserModel struct {
+	loggedIn    int
 	currentConn int
 	totalConn   int
 	browsers    int
@@ -190,6 +246,8 @@ func (m multiBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg {
 		case -1:
 			return m, tea.Quit
+		case bMSGLogin:
+			m.loggedIn++
 		case bMSGConnect:
 			m.currentConn++
 			m.totalConn++
@@ -214,11 +272,13 @@ func (m multiBrowserModel) View() string {
 		lastErrors = append(lastErrors, m.errors[i].Error())
 	}
 	return fmt.Sprintf(
-		`Current Connections: %d
+		`Logged in: %d
+Current Connections: %d
 Total Connections: %d	
 Browsers: %d
 Errors: %d
 Last Errors:%s`,
+		m.loggedIn,
 		m.currentConn,
 		m.totalConn,
 		m.browsers,
