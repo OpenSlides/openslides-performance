@@ -15,7 +15,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/quic-go/quic-go/http3"
 )
@@ -60,7 +59,6 @@ func New(cfg Config) (*Client, error) {
 		cfg: cfg,
 		httpClient: &http.Client{
 			Transport: transport,
-			Timeout:   3 * time.Second,
 		},
 	}
 

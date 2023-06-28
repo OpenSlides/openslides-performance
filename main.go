@@ -28,7 +28,7 @@ func main() {
 	cliCtx.BindTo(ctx, (*context.Context)(nil))
 	cliCtx.Bind(cli.Config)
 	if err := cliCtx.Run(); err != nil {
-		fmt.Println(err)
+		fmt.Printf("Error: %v", err)
 		os.Exit(1)
 	}
 }
