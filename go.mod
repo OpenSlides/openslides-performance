@@ -6,6 +6,7 @@ require (
 	github.com/OpenSlides/vote-decrypt v0.0.0-20230728051701-131fd56b932a
 	github.com/alecthomas/kong v0.8.0
 	github.com/charmbracelet/bubbletea v0.24.2
+	github.com/eiannone/keyboard v0.0.0-20220611211555-0d226195f203
 	github.com/google/uuid v1.3.0
 	github.com/ostcar/topic v0.4.1
 	github.com/quic-go/quic-go v0.37.0

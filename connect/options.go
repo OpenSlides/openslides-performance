@@ -7,6 +7,7 @@ type Options struct {
 	Amount          int      `help:"Amount of connections to use." short:"n" default:"10"`
 	Body            string   `help:"Request Body." short:"b"`
 	BodyFile        *os.File `help:"Request Body from a file. Use - for stdin"`
+	Action          *os.File `help:"Request Body to use as an action. If set, press enter to sent the action"`
 	SkipFirst       bool     `help:"Use skip first flag to save traffic."`
 	MuliUserMeeting int      `help:"Use dummy user accounts from meeting. 0 For global dummys. Uses the same account as default." short:"m" default:"-1"`
 }
