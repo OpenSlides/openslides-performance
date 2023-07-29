@@ -173,7 +173,7 @@ func MassLogin(ctx context.Context, clients []*client.Client, meetingID int) {
 func massVotes(ctx context.Context, clients []*client.Client, url string, pollID, optionID int, cryptKey []byte) error {
 	voteValue := fmt.Sprintf(`{"%d": "Y"}`, optionID)
 	if cryptKey != nil {
-		encrypted, err := crypto.Encrypt(rand.Reader, cryptKey, []byte(voteValue))
+		encrypted, err := crypto.Encrypt(rand.Reader, nil, cryptKey, []byte(voteValue))
 		if err != nil {
 			return fmt.Errorf("encrypt vote: %w", err)
 		}

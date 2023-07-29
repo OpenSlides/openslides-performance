@@ -2,6 +2,7 @@ package connect
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/OpenSlides/openslides-performance/client"
 	"github.com/OpenSlides/openslides-performance/vote"
+	"github.com/eiannone/keyboard"
 	"github.com/vbauerster/mpb/v7"
 	"github.com/vbauerster/mpb/v7/decor"
 )
@@ -64,8 +66,27 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 		vote.MassLogin(ctx, clients, o.MuliUserMeeting)
 	}
 
+	actionCh := make(chan struct{})
+	if o.Action != nil {
+		content, err := io.ReadAll(o.Action)
+		if err != nil {
+			return fmt.Errorf("reading action file: %w", err)
+		}
+
+		c, err := client.New(cfg)
+		if err != nil {
+			return fmt.Errorf("creating client: %w", err)
+		}
+
+		if err := c.Login(ctx); err != nil {
+			return fmt.Errorf("login client: %w", err)
+		}
+
+		go listenForAction(ctx, c, content, actionCh)
+	}
+
 	progress := mpb.New()
-	received := make(chan string, 1)
+	received := make(chan int, 1)
 
 	for i := 0; i < o.Amount; i++ {
 		go func(i int) {
@@ -105,8 +126,8 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 
 			changeID := 0
 			for scanner.Scan() {
+				received <- changeID
 				changeID++
-				received <- fmt.Sprintf("Change %d", changeID)
 			}
 
 			if err := scanner.Err(); err != nil {
@@ -119,23 +140,33 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 		}(i)
 	}
 
-	cidToBar := make(map[string]*mpb.Bar)
+	var bars []*mpb.Bar
 
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case msg := <-received:
-			bar, ok := cidToBar[msg]
-			if !ok {
-				bar = progress.AddBar(
+		case <-actionCh:
+			bar := progress.AddBar(
+				int64(o.Amount),
+				mpb.PrependDecorators(decor.Name(fmt.Sprintf("change %d", len(bars)+1))),
+				mpb.AppendDecorators(decor.Elapsed(decor.ET_STYLE_GO)),
+				mpb.AppendDecorators(decor.CountersNoUnit(" %d/%d")),
+			)
+			bars = append(bars, bar)
+
+		case barID := <-received:
+			for len(bars) < barID+1 {
+				bar := progress.AddBar(
 					int64(o.Amount),
-					mpb.PrependDecorators(decor.Name(msg)),
+					mpb.PrependDecorators(decor.Name(fmt.Sprintf("change %d", barID+1))),
 					mpb.AppendDecorators(decor.Elapsed(decor.ET_STYLE_GO)),
 					mpb.AppendDecorators(decor.CountersNoUnit(" %d/%d")),
 				)
-				cidToBar[msg] = bar
+				bars = append(bars, bar)
 			}
+
+			bar := bars[barID]
 			bar.Increment()
 		}
 	}
@@ -152,4 +183,53 @@ func keepOpen(ctx context.Context, c *client.Client, path string, body io.Reader
 		return nil, fmt.Errorf("sending request to %s: %w", path, err)
 	}
 	return resp.Body, nil
+}
+
+func listenForAction(ctx context.Context, cli *client.Client, body []byte, actionCh chan struct{}) {
+	if err := keyboard.Open(); err != nil {
+		log.Printf("open keyboard: %v", err)
+		return
+	}
+	defer keyboard.Close()
+
+	for {
+		_, key, err := keyboard.GetKey()
+		if err != nil {
+			log.Printf("listening on keyboard: %v", err)
+			return
+		}
+
+		if key == keyboard.KeyCtrlC {
+			return
+		}
+
+		if key != keyboard.KeyEnter {
+			continue
+		}
+
+		if err := sendAction(ctx, cli, body, actionCh); err != nil {
+			log.Printf("sending action: %v", err)
+			return
+		}
+	}
+}
+
+func sendAction(ctx context.Context, cli *client.Client, body []byte, actionCh chan struct{}) error {
+	req, err := http.NewRequestWithContext(
+		ctx,
+		"POST",
+		"/system/action/handle_request",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	if _, err := cli.Do(req); err != nil {
+		return fmt.Errorf("sending request: %w", err)
+	}
+
+	actionCh <- struct{}{}
+	return nil
 }
