@@ -1,5 +1,5 @@
 /openslides-performance
-/config.json
+/*.json
 /record.txt
 
 dist/
