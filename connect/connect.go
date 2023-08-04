@@ -21,6 +21,9 @@ import (
 
 // Run runs the command.
 func (o Options) Run(ctx context.Context, cfg client.Config) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	if o.Body != "" && o.BodyFile != nil {
 		return fmt.Errorf("--body and --body-file are set at the same time. Only one is allowed")
 	}
@@ -82,7 +85,10 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 			return fmt.Errorf("login client: %w", err)
 		}
 
-		go listenForAction(ctx, c, content, actionCh)
+		go func() {
+			listenForAction(ctx, c, content, actionCh)
+			cancel()
+		}()
 	}
 
 	progress := mpb.New()
