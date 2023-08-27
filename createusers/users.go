@@ -35,7 +35,8 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 		namePrefix = fmt.Sprintf("m%d", o.MeetingID)
 		extraFields = fmt.Sprintf(`
 				"is_present_in_meeting_ids": [%d],
-				"group_$_ids": {"%d":[%d]},
+				"meeting_id": %d,
+				"group_ids": [%d],
 				`,
 			o.MeetingID,
 			o.MeetingID,
@@ -65,7 +66,7 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 			var users []string
 			for i := 0; i < o.Batch; i++ {
 				userID := b*(o.Batch) + i + o.FirstID
-				users = append(users, fmt.Sprintf(
+				user := fmt.Sprintf(
 					`{
 							"username": "%sdummy%d",
 							"default_password": "pass",
@@ -75,7 +76,8 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 					namePrefix,
 					userID,
 					extraFields,
-				))
+				)
+				users = append(users, user)
 			}
 
 			createBody := fmt.Sprintf(
