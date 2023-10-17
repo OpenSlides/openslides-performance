@@ -125,7 +125,7 @@ func delegateGroup(ctx context.Context, c *client.Client, meetingID int) (int, e
 					"type": "relation-list",
 					"collection": "group",
 					"fields": {
-						"name": null
+						"external_id": null
 					}
 				}
 			}
