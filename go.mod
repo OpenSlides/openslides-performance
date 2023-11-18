@@ -12,6 +12,7 @@ require (
 	github.com/quic-go/quic-go v0.38.1
 	github.com/vbauerster/mpb/v7 v7.5.3
 	golang.org/x/sync v0.3.0
+	nhooyr.io/websocket v1.8.10
 )
 
 require (

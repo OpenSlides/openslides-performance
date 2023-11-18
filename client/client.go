@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/quic-go/quic-go/http3"
+	"nhooyr.io/websocket"
 )
 
 // Client holds the connection to the OpenSlides server.
@@ -119,6 +120,32 @@ func (c *Client) DoTask(req *http.Request) (*Task, error) {
 		resp: resp,
 		done: closedCh,
 	}, nil
+}
+
+// Dial makes a websocket connection.
+func (c *Client) Dial(ctx context.Context, rawURL string) (*websocket.Conn, *http.Response, error) {
+	url, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parsing rawURL: %w", err)
+	}
+
+	if url.Host == "" {
+		base, err := url.Parse(c.cfg.Addr())
+		if err != nil {
+			return nil, nil, fmt.Errorf("parsing base url: %w", err)
+		}
+
+		url = base.ResolveReference(url)
+	}
+
+	header := http.Header{}
+	header.Set("authentication", c.authToken)
+	header.Add("cookie", c.authCookie.String())
+
+	return websocket.Dial(ctx, url.String(), &websocket.DialOptions{
+		HTTPClient: c.httpClient,
+		HTTPHeader: header,
+	})
 }
 
 func (c *Client) backendWorker(ctx context.Context, resp *http.Response) (*Task, error) {

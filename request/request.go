@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/OpenSlides/openslides-performance/client"
+	"nhooyr.io/websocket"
 )
 
 // Run sends the request.
@@ -30,6 +31,10 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 
 	if err := c.Login(ctx); err != nil {
 		return fmt.Errorf("login client: %w", err)
+	}
+
+	if o.Websocket {
+		return o.doWebsocketStuff(ctx, c)
 	}
 
 	method := "GET"
@@ -62,4 +67,32 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 		return fmt.Errorf("writing response body to stdout: %w", err)
 	}
 	return nil
+}
+
+func (o Options) doWebsocketStuff(ctx context.Context, c *client.Client) error {
+	conn, _, err := c.Dial(ctx, o.URL.String())
+	if err != nil {
+		return fmt.Errorf("dial: %w", err)
+	}
+	defer conn.CloseNow()
+
+	conn.SetReadLimit(-1)
+
+	if err := conn.Write(ctx, websocket.MessageText, []byte(o.Body)); err != nil {
+		return fmt.Errorf("write body: %w", err)
+	}
+
+	for {
+		_, reader, err := conn.Reader(ctx)
+		if err != nil {
+			return fmt.Errorf("start reading: %w", err)
+		}
+
+		if _, err := io.Copy(os.Stdout, reader); err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil
+			}
+			return fmt.Errorf("writing response body to stdout: %w", err)
+		}
+	}
 }

@@ -11,7 +11,8 @@ type Options struct {
 
 	Body            string   `help:"HTTP Post body." short:"b"`
 	BodyFile        *os.File `help:"Request Body from a file. Use - for stdin"`
-	NoBackendWorker bool     `help:"Disable automatic handeling of backend workers" short:"w"`
+	NoBackendWorker bool     `help:"Disable automatic handeling of backend workers"`
+	Websocket       bool     `help:"open a websocket connection" short:"w"`
 }
 
 // Help returns the help message
