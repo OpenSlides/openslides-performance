@@ -9,6 +9,7 @@ import (
 	"os/signal"
 
 	"github.com/OpenSlides/openslides-performance/backendaction"
+	"github.com/OpenSlides/openslides-performance/brokenproxy"
 	"github.com/OpenSlides/openslides-performance/browser"
 	"github.com/OpenSlides/openslides-performance/client"
 	"github.com/OpenSlides/openslides-performance/connect"
@@ -56,6 +57,7 @@ var cli struct {
 	client.Config
 
 	BackendAction backendaction.Options `cmd:"" help:"Calls a backend action multiple times."`
+	BrokenProxy   brokenproxy.Options   `cmd:"" help:"Starts a broken proxy."`
 	Browser       browser.Options       `cmd:"" help:"Simulates a browser."`
 	Connect       connect.Options       `cmd:"" help:"Opens many connections to autoupdate and keeps them open."`
 	CreateUsers   createusers.Options   `cmd:"" help:"Create many users."`
