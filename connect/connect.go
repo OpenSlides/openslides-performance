@@ -44,7 +44,7 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 
 	var clients []*client.Client
 
-	if o.MuliUserMeeting == -1 {
+	if o.MultiUserMeeting == -1 {
 		c, err := client.New(cfg)
 		if err != nil {
 			return fmt.Errorf("creating client: %w", err)
@@ -66,7 +66,7 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 		}
 
 		fmt.Println("login clients")
-		vote.MassLogin(ctx, clients, o.MuliUserMeeting)
+		vote.MassLogin(ctx, clients, o.MultiUserMeeting, o.BaseName, o.UsersPassword)
 	}
 
 	actionCh := make(chan struct{})
@@ -97,7 +97,7 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 	for i := 0; i < o.Amount; i++ {
 		go func(i int) {
 			client := clients[0]
-			if o.MuliUserMeeting != -1 {
+			if o.MultiUserMeeting != -1 {
 				client = clients[i]
 			}
 			var r io.ReadCloser
