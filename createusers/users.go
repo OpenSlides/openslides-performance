@@ -68,18 +68,21 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 				userID := b*(o.Batch) + i + o.FirstID
 				user := fmt.Sprintf(
 					`{
-							"username": "%sdummy%d",
-							"default_password": "pass",
+							"username": "%s%s%d",
+							"default_password": "%s",
 							%s
 							"is_active":true
 						}`,
 					namePrefix,
+					o.BaseName,
 					userID,
+					o.UsersPassword,
 					extraFields,
 				)
 				users = append(users, user)
 			}
 
+			fmt.Printf("%s", users)
 			createBody := fmt.Sprintf(
 				`[{
 						"action": "user.create",
