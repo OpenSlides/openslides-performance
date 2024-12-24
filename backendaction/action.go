@@ -32,24 +32,40 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 		o.Content = string(stdinContent)
 	}
 
-	actions := make([]string, o.Amount)
-	for i := 0; i < len(actions); i++ {
-		c := o.Content
-		c = strings.ReplaceAll(c, `\i`, strconv.Itoa(i+1))
-		c = strings.ReplaceAll(c, `\u`, uuid.New().String())
+	body := ""
+	if o.BodyFile != nil {
+		bodyFileContent, err := io.ReadAll(o.BodyFile)
+		if err != nil {
+			return fmt.Errorf("reading body file: %w", err)
+		}
 
-		actions[i] = c
+		body = fmt.Sprintf(
+			`[{
+				"action": "%s",
+				"data": %s
+			}]`,
+			o.Action,
+			bodyFileContent,
+		)
+	} else {
+		actions := make([]string, o.Amount)
+		for i := 0; i < len(actions); i++ {
+			c := o.Content
+			c = strings.ReplaceAll(c, `\i`, strconv.Itoa(i+1))
+			c = strings.ReplaceAll(c, `\u`, uuid.New().String())
+
+			actions[i] = c
+		}
+
+		body = fmt.Sprintf(
+			`[{
+				"action": "%s",
+				"data": [%s]
+			}]`,
+			o.Action,
+			strings.Join(actions, ","),
+		)
 	}
-
-	body := fmt.Sprintf(
-		`[{
-			"action": "%s",
-			"data": [%s]
-		}]`,
-		o.Action,
-		strings.Join(actions, ","),
-	)
-
 	req, err := http.NewRequestWithContext(
 		ctx,
 		"POST",
