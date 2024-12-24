@@ -4,12 +4,14 @@ import "os"
 
 // Options is the meta information for the cli.
 type Options struct {
-	Amount          int      `help:"Amount of connections to use." short:"n" default:"10"`
-	Body            string   `help:"Request Body." short:"b"`
-	BodyFile        *os.File `help:"Request Body from a file. Use - for stdin"`
-	Action          *os.File `help:"Request Body to use as an action. If set, press enter to sent the action"`
-	SkipFirst       bool     `help:"Use skip first flag to save traffic."`
-	MuliUserMeeting int      `help:"Use dummy user accounts from meeting. 0 For global dummys. Uses the same account as default." short:"m" default:"-1"`
+	Amount           int      `help:"Amount of connections to use." short:"n" default:"10"`
+	Body             string   `help:"Request Body." short:"b"`
+	BodyFile         *os.File `help:"Request Body from a file. Use - for stdin"`
+	Action           *os.File `help:"Request Body to use as an action. If set, press enter to sent the action"`
+	SkipFirst        bool     `help:"Use skip first flag to save traffic."`
+	MultiUserMeeting int      `help:"Use dummy user accounts from meeting. 0 For global dummys. Uses the same account as default." short:"m" default:"-1"`
+	BaseName         string   `help:"The name string that is concatenated with meeting id and user id, e.g. m1dummy1." default:"dummy"`
+	UsersPassword    string   `help:"The password used for all users" default:"pass"`
 }
 
 // Help returns the help message
