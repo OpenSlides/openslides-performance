@@ -154,9 +154,9 @@ func MassLogin(ctx context.Context, clients []*client.Client, meetingID int, bas
 
 			client := clients[i]
 
-			username := fmt.Sprintf("dummy%d", i+1)
+			username := fmt.Sprintf("%s%d", basename, i+1)
 			if meetingID > 0 {
-				username = fmt.Sprintf("m%d%s%d", meetingID, username, i+1)
+				username = fmt.Sprintf("m%d%s", meetingID, username)
 			}
 
 			if err := client.LoginWithCredentials(ctx, username, password); err != nil {
