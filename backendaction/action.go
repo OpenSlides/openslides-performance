@@ -2,6 +2,7 @@ package backendaction
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -49,9 +50,9 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 		)
 	} else {
 		actions := make([]string, o.Amount)
-		for i := 0; i < len(actions); i++ {
+		for i := range len(actions) {
 			c := o.Content
-			c = strings.ReplaceAll(c, `\i`, strconv.Itoa(i+1))
+			c = strings.ReplaceAll(c, `\i`, strconv.Itoa(i+o.FirstID))
 			c = strings.ReplaceAll(c, `\u`, uuid.New().String())
 
 			actions[i] = c
@@ -66,6 +67,7 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 			strings.Join(actions, ","),
 		)
 	}
+
 	req, err := http.NewRequestWithContext(
 		ctx,
 		"POST",
@@ -77,8 +79,21 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	if _, err := c.Do(req); err != nil {
+	resp, err := c.Do(req)
+	if err != nil {
 		return fmt.Errorf("sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var respBody struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&respBody); err != nil {
+		return fmt.Errorf("decoding response: %w", err)
+	}
+	if !respBody.Success {
+		return fmt.Errorf("action failed: %v", respBody.Message)
 	}
 
 	return nil

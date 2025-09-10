@@ -82,7 +82,6 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 				users = append(users, user)
 			}
 
-			fmt.Printf("%s", users)
 			createBody := fmt.Sprintf(
 				`[{
 						"action": "user.create",
