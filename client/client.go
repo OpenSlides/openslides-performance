@@ -17,7 +17,6 @@ import (
 	"strings"
 
 	"github.com/coder/websocket"
-	"github.com/quic-go/quic-go/http3"
 )
 
 // Client holds the connection to the OpenSlides server.
@@ -45,15 +44,6 @@ func New(cfg Config) (*Client, error) {
 			InsecureSkipVerify: true,
 		},
 		DialContext: dialContext,
-	}
-
-	if cfg.HTTP3 {
-		transport = &http3.RoundTripper{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-			// TODO: respect the IPv4 config
-		}
 	}
 
 	c := Client{
@@ -290,7 +280,7 @@ func (c *Client) LoginWithCredentials(ctx context.Context, username, password st
 	req.Header.Set("Content-Type", "application/json")
 
 	var resp *http.Response
-	for retry := 0; retry < 100; retry++ {
+	for range 100 {
 		resp, err = checkStatus(c.httpClient.Do(req))
 		// TODO: Show some sort of process in case of timeout
 

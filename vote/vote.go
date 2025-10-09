@@ -3,7 +3,6 @@ package vote
 import (
 	"bufio"
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,7 +14,6 @@ import (
 	"time"
 
 	"github.com/OpenSlides/openslides-performance/client"
-	"github.com/OpenSlides/vote-decrypt/crypto"
 	"github.com/vbauerster/mpb/v7"
 )
 
@@ -29,13 +27,13 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 		return fmt.Errorf("login admin: %w", err)
 	}
 
-	meetingID, optionID, cryptKey, err := pollData(ctx, admin, o.PollID)
+	optionID, err := pollData(ctx, admin, o.PollID)
 	if err != nil {
-		return fmt.Errorf("getting poll data: %w", err)
+		return fmt.Errorf("getting option id: %w", err)
 	}
 
 	clients := make([]*client.Client, o.Amount)
-	for i := 0; i < len(clients); i++ {
+	for i := range len(clients) {
 		c, err := client.New(cfg)
 		if err != nil {
 			return fmt.Errorf("creating client: %w", err)
@@ -45,7 +43,7 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 
 	log.Printf("Login %d clients", len(clients))
 	start := time.Now()
-	MassLogin(ctx, clients, meetingID, o.BaseName, o.UsersPassword)
+	MassLogin(ctx, clients, o.BaseName, o.UsersPassword)
 	log.Printf("All clients logged in %v", time.Now().Sub(start))
 
 	first := true
@@ -62,7 +60,7 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 
 		start := time.Now()
 		url := "/system/vote"
-		if err := massVotes(ctx, clients, url, o.PollID, optionID, cryptKey); err != nil {
+		if err := massVotes(clients, url, o.PollID, optionID); err != nil {
 			return fmt.Errorf("mass vote: %w", err)
 		}
 		log.Printf("All Clients have voted in %v", time.Now().Sub(start))
@@ -71,66 +69,48 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 	return nil
 }
 
-func pollData(ctx context.Context, client *client.Client, pollID int) (meetingID, optionID int, cryptKey []byte, err error) {
+func pollData(ctx context.Context, client *client.Client, pollID int) (int, error) {
 	requestBody := fmt.Sprintf(
 		`[{
 			"collection":"poll",
 			"ids":[%d],
 			"fields": {
-				"meeting_id": null,
 				"option_ids": null,
-				"crypt_key":null
 			}
 		}]`,
 		pollID,
 	)
 	req, err := http.NewRequestWithContext(ctx, "GET", "/system/autoupdate?single=1", strings.NewReader(requestBody))
 	if err != nil {
-		return 0, 0, nil, fmt.Errorf("building request: %w", err)
+		return 0, fmt.Errorf("building request: %w", err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, 0, nil, fmt.Errorf("getting response: %w", err)
+		return 0, fmt.Errorf("getting response: %w", err)
 	}
 	defer resp.Body.Close()
 
 	var data map[string]json.RawMessage
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return 0, 0, nil, fmt.Errorf("decoding response body: %w", err)
-	}
-
-	rawMeetingID, ok := data[fmt.Sprintf("poll/%d/meeting_id", pollID)]
-	if !ok {
-		return 0, 0, nil, fmt.Errorf("meeting_id not in response, got %v", dataKeys(data))
+		return 0, fmt.Errorf("decoding response body: %w", err)
 	}
 
 	rawOptionIDs, ok := data[fmt.Sprintf("poll/%d/option_ids", pollID)]
 	if !ok {
-		return 0, 0, nil, fmt.Errorf("option_ids not in response, got %v", dataKeys(data))
-	}
-
-	if err := json.Unmarshal(rawMeetingID, &meetingID); err != nil {
-		return 0, 0, nil, fmt.Errorf("decoding meeting_id from %q: %w", rawMeetingID, err)
+		return 0, fmt.Errorf("option_ids not in response, got %v", dataKeys(data))
 	}
 
 	var optionIDs []int
 	if err := json.Unmarshal(rawOptionIDs, &optionIDs); err != nil {
-		return 0, 0, nil, fmt.Errorf("decoding meeting_id from %q: %w", rawMeetingID, err)
+		return 0, fmt.Errorf("decoding meeting_id from %q: %w", rawOptionIDs, err)
 	}
 
 	if len(optionIDs) != 1 {
-		return 0, 0, nil, fmt.Errorf("option_ids is %q, expected one value", rawOptionIDs)
+		return 0, fmt.Errorf("option_ids is %q, expected one value", rawOptionIDs)
 	}
 
-	cryptKeyRaw := data[fmt.Sprintf("poll/%d/crypt_key", pollID)]
-	if cryptKeyRaw != nil {
-		if err := json.Unmarshal(cryptKeyRaw, &cryptKey); err != nil {
-			return 0, 0, nil, fmt.Errorf("decoding crypt key: %w", err)
-		}
-	}
-
-	return meetingID, optionIDs[0], cryptKey, nil
+	return optionIDs[0], nil
 }
 
 func dataKeys(m map[string]json.RawMessage) []string {
@@ -142,12 +122,12 @@ func dataKeys(m map[string]json.RawMessage) []string {
 }
 
 // MassLogin logs in a list of clients.
-func MassLogin(ctx context.Context, clients []*client.Client, meetingID int, basename string, password string) {
+func MassLogin(ctx context.Context, clients []*client.Client, basename string, password string) {
 	var wgLogin sync.WaitGroup
 	progress := mpb.New(mpb.WithWaitGroup(&wgLogin))
 	loginBar := progress.AddBar(int64(len(clients)))
 
-	for i := 0; i < len(clients); i++ {
+	for i := range len(clients) {
 		wgLogin.Add(1)
 		go func(i int) {
 			defer wgLogin.Done()
@@ -155,9 +135,6 @@ func MassLogin(ctx context.Context, clients []*client.Client, meetingID int, bas
 			client := clients[i]
 
 			username := fmt.Sprintf("%s%d", basename, i+1)
-			if meetingID > 0 {
-				username = fmt.Sprintf("m%d%s", meetingID, username)
-			}
 
 			if err := client.LoginWithCredentials(ctx, username, password); err != nil {
 				log.Printf("Login failed for user %s: %v", username, err)
@@ -170,28 +147,15 @@ func MassLogin(ctx context.Context, clients []*client.Client, meetingID int, bas
 	progress.Wait()
 }
 
-func massVotes(ctx context.Context, clients []*client.Client, url string, pollID, optionID int, cryptKey []byte) error {
+func massVotes(clients []*client.Client, url string, pollID, optionID int) error {
 	voteValue := fmt.Sprintf(`{"%d": "Y"}`, optionID)
-	if cryptKey != nil {
-		encrypted, err := crypto.Encrypt(rand.Reader, nil, cryptKey, []byte(voteValue))
-		if err != nil {
-			return fmt.Errorf("encrypt vote: %w", err)
-		}
-
-		encoded, err := json.Marshal(encrypted)
-		if err != nil {
-			return fmt.Errorf("encode vote: %w", err)
-		}
-
-		voteValue = string(encoded)
-	}
 
 	payload := fmt.Sprintf(`{"value": %s}`, voteValue)
 
 	var wgVote sync.WaitGroup
 	progress := mpb.New(mpb.WithWaitGroup(&wgVote))
 	voteBar := progress.AddBar(int64(len(clients)))
-	for i := 0; i < len(clients); i++ {
+	for i := range len(clients) {
 		wgVote.Add(1)
 		go func(i int) {
 			defer wgVote.Done()

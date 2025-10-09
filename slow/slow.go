@@ -2,9 +2,9 @@ package slow
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"time"
 
@@ -21,7 +21,7 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 
 	eg, ctx := errgroup.WithContext(ctx)
 
-	for i := 0; i < o.Amount; i++ {
+	for range o.Amount {
 		eg.Go(func() error {
 			for ctx.Err() == nil {
 				req, err := http.NewRequestWithContext(ctx, "POST", o.URL.String(), slowRandromReader{})

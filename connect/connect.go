@@ -44,7 +44,7 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 
 	var clients []*client.Client
 
-	if o.MultiUserMeeting == -1 {
+	if !o.MultiUser {
 		c, err := client.New(cfg)
 		if err != nil {
 			return fmt.Errorf("creating client: %w", err)
@@ -66,7 +66,7 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 		}
 
 		fmt.Println("login clients")
-		vote.MassLogin(ctx, clients, o.MultiUserMeeting, o.BaseName, o.UsersPassword)
+		vote.MassLogin(ctx, clients, o.BaseName, o.UsersPassword)
 	}
 
 	actionCh := make(chan struct{})
@@ -97,7 +97,7 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 	for i := 0; i < o.Amount; i++ {
 		go func(i int) {
 			client := clients[0]
-			if o.MultiUserMeeting != -1 {
+			if o.MultiUser {
 				client = clients[i]
 			}
 			var r io.ReadCloser
@@ -106,13 +106,8 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 					return
 				}
 
-				skipFirstAttr := ""
-				if o.SkipFirst {
-					skipFirstAttr = "&skip_first=1"
-				}
-
 				var err error
-				r, err = keepOpen(ctx, client, "/system/autoupdate?compress=1"+skipFirstAttr, strings.NewReader(body))
+				r, err = keepOpen(ctx, client, "/system/autoupdate?compress=1", strings.NewReader(body))
 				if err != nil {
 					if ctx.Err() != nil {
 						return

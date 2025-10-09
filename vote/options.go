@@ -6,7 +6,7 @@ type Options struct {
 	PollID        int    `help:"ID of the poll to use." short:"i" default:"1"`
 	Interrupt     bool   `help:"Wait for a user input after login."`
 	Loop          bool   `help:"After the test, start it again with the logged in users."`
-	BaseName      string `help:"The name string that is concatenated with meeting id and user id, e.g. m1dummy1." default:"dummy"`
+	BaseName      string `help:"Username, that will be concateenated with an id e.g. dummy1." default:"dummy"`
 	UsersPassword string `help:"The password used for all users" default:"pass"`
 }
 
