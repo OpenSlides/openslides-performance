@@ -16,8 +16,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/coder/websocket"
 	"github.com/quic-go/quic-go/http3"
-	"nhooyr.io/websocket"
 )
 
 // Client holds the connection to the OpenSlides server.
