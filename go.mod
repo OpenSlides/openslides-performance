@@ -5,7 +5,6 @@ go 1.25.0
 require (
 	github.com/alecthomas/kong v1.12.1
 	github.com/charmbracelet/bubbletea v1.3.10
-	github.com/coder/websocket v1.8.14
 	github.com/eiannone/keyboard v0.0.0-20220611211555-0d226195f203
 	github.com/google/uuid v1.6.0
 	github.com/ostcar/topic v0.4.1
