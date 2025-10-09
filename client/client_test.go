@@ -1,7 +1,6 @@
 package client_test
 
 import (
-	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -13,7 +12,7 @@ import (
 )
 
 func TestLogin(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	fakeServer := newServerSub()
 	ts := httptest.NewServer(fakeServer)
 	event := make(chan struct{})
@@ -37,7 +36,7 @@ func TestLogin(t *testing.T) {
 }
 
 func TestBackendActionWorker(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	fakeServer := newServerSub()
 	ts := httptest.NewServer(fakeServer)
 	c, err := client.New(client.Config{
@@ -80,7 +79,7 @@ func TestBackendActionWorker(t *testing.T) {
 }
 
 func TestBackendActionWorkerAbborted(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	fakeServer := newServerSub()
 	ts := httptest.NewServer(fakeServer)
 	c, err := client.New(client.Config{

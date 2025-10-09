@@ -23,7 +23,7 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 	}
 
 	eg, ctx := errgroup.WithContext(ctx)
-	for i := 0; i < o.Amount; i++ {
+	for range o.Amount {
 		eg.Go(func() error {
 			cli, err := client.New(cfg)
 			if err != nil {

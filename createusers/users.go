@@ -24,7 +24,6 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 		return fmt.Errorf("login client: %w", err)
 	}
 
-	namePrefix := ""
 	extraFields := ""
 	if o.MeetingID != 0 {
 		groupID, err := delegateGroup(ctx, c, o.MeetingID)
@@ -32,7 +31,6 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 			return fmt.Errorf("fetching delegated group: %w", err)
 		}
 
-		namePrefix = fmt.Sprintf("m%d", o.MeetingID)
 		extraFields = fmt.Sprintf(`
 				"is_present_in_meeting_ids": [%d],
 				"meeting_id": %d,
@@ -60,20 +58,19 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 
 	eg, ctx := errgroup.WithContext(ctx)
 
-	for b := 0; b < batchCount; b++ {
+	for b := range batchCount {
 		b := b
 		eg.Go(func() error {
 			var users []string
-			for i := 0; i < o.Batch; i++ {
+			for i := range o.Batch {
 				userID := b*(o.Batch) + i + o.FirstID
 				user := fmt.Sprintf(
 					`{
-							"username": "%s%s%d",
+							"username": "%s%d",
 							"default_password": "%s",
 							%s
 							"is_active":true
 						}`,
-					namePrefix,
 					o.BaseName,
 					userID,
 					o.UsersPassword,
@@ -84,9 +81,9 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 
 			createBody := fmt.Sprintf(
 				`[{
-						"action": "user.create",
-						"data": [%s]
-					}]`,
+					"action": "user.create",
+					"data": [%s]
+				}]`,
 				strings.Join(users, ","),
 			)
 

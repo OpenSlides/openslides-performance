@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -49,7 +48,7 @@ func (o record) Run(ctx context.Context, cfg client.Config) error {
 				// Ignore a body that can not be read.
 				body = nil
 			}
-			r.Body = ioutil.NopCloser(bytes.NewReader(body))
+			r.Body = io.NopCloser(bytes.NewReader(body))
 		}
 
 		requestCh <- request{

@@ -6,7 +6,7 @@ type Options struct {
 	MeetingID     int    `help:"If set, put the user in the delegated group of this meeting." short:"m"`
 	Batch         int    `help:"Number of users to create with one request. Default is all at once." short:"b"`
 	FirstID       int    `help:"First id to use. Usefull when additional users should be created." default:"1"`
-	BaseName      string `help:"The name string that is concatenated with meeting id and user id, e.g. m1dummy1." default:"dummy"`
+	BaseName      string `help:"The name string that is concatenated an incremented id" default:"dummy"`
 	UsersPassword string `help:"The password used for all users" default:"pass"`
 }
 
