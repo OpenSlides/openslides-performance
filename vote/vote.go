@@ -27,11 +27,6 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 		return fmt.Errorf("login admin: %w", err)
 	}
 
-	optionID, err := pollData(ctx, admin, o.PollID)
-	if err != nil {
-		return fmt.Errorf("getting option id: %w", err)
-	}
-
 	clients := make([]*client.Client, o.Amount)
 	for i := range len(clients) {
 		c, err := client.New(cfg)
@@ -60,7 +55,7 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 
 		start := time.Now()
 		url := "/system/vote"
-		if err := massVotes(clients, url, o.PollID, optionID); err != nil {
+		if err := massVotes(clients, url, o.PollID); err != nil {
 			return fmt.Errorf("mass vote: %w", err)
 		}
 		log.Printf("All Clients have voted in %v", time.Now().Sub(start))
@@ -147,10 +142,8 @@ func MassLogin(ctx context.Context, clients []*client.Client, basename string, p
 	progress.Wait()
 }
 
-func massVotes(clients []*client.Client, url string, pollID, optionID int) error {
-	voteValue := fmt.Sprintf(`{"%d": "Y"}`, optionID)
-
-	payload := fmt.Sprintf(`{"value": %s}`, voteValue)
+func massVotes(clients []*client.Client, url string, pollID int) error {
+	payload := `{"value": "yes"}`
 
 	var wgVote sync.WaitGroup
 	progress := mpb.New(mpb.WithWaitGroup(&wgVote))
