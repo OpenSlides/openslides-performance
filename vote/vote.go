@@ -40,6 +40,11 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 	MassLogin(ctx, clients, o.BaseName, o.UsersPassword)
 	log.Printf("All clients logged in %v", time.Now().Sub(start))
 
+	parallel := len(clients)
+	if o.Parallel != 0 {
+		parallel = o.Parallel
+	}
+
 	first := true
 
 	for first || o.Loop {
@@ -54,7 +59,7 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 
 		start := time.Now()
 		url := "/system/vote"
-		if err := massVotes(clients, url, o.PollID); err != nil {
+		if err := massVotes(clients, url, o.PollID, parallel); err != nil {
 			return fmt.Errorf("mass vote: %w", err)
 		}
 		log.Printf("All Clients have voted in %v", time.Now().Sub(start))
@@ -89,17 +94,20 @@ func MassLogin(ctx context.Context, clients []*client.Client, basename string, p
 	progress.Wait()
 }
 
-func massVotes(clients []*client.Client, url string, pollID int) error {
+func massVotes(clients []*client.Client, url string, pollID int, parallel int) error {
 	payload := `{"value": "yes"}`
 
 	var wgVote sync.WaitGroup
 	progress := mpb.New(mpb.WithWaitGroup(&wgVote))
 	voteBar := progress.AddBar(int64(len(clients)))
+	lock := make(chan struct{}, parallel)
 	for i := range len(clients) {
+		lock <- struct{}{}
 		wgVote.Add(1)
 		go func(i int) {
 			defer wgVote.Done()
 			defer voteBar.Increment()
+			defer func() { <-lock }()
 
 			client := clients[i]
 			req, err := http.NewRequest("POST", fmt.Sprintf("%s?id=%d", url, pollID), strings.NewReader(payload))
