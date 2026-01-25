@@ -15,6 +15,10 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/golang-jwt/jwt/v4"
 )
 
 // Client holds the connection to the OpenSlides server.
@@ -242,6 +246,15 @@ func (c *Client) LoginWithCredentials(ctx context.Context, username, password st
 		return nil
 	}
 
+	if c.cfg.AuthToken != "" && c.cfg.AuthCookie != "" {
+		id, err := fetchUserID(ctx, c.cfg, username)
+		if err != nil {
+			return fmt.Errorf("resolve username: %w", err)
+		}
+		c.userID = id
+		return c.LoginWithToken()
+	}
+
 	url := c.cfg.Addr() + "/system/auth/login"
 	payload := fmt.Sprintf(`{"username": "%s", "password": "%s"}`, username, password)
 
@@ -288,6 +301,130 @@ func (c *Client) LoginWithCredentials(ctx context.Context, username, password st
 
 	c.userID = id
 	return nil
+}
+
+func (c *Client) LoginWithToken() error {
+	tokenKey := c.cfg.AuthToken
+	cookieKey := c.cfg.AuthCookie
+
+	now := time.Now()
+	tokenClaims := jwt.MapClaims{
+		"userId":    c.userID,
+		"sessionId": "fake-session",
+		"exp":       now.Add(24 * time.Hour).Unix(),
+		"iat":       now.Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, tokenClaims)
+	signedToken, err := token.SignedString([]byte(tokenKey))
+	if err != nil {
+		return fmt.Errorf("signing auth token: %w", err)
+	}
+
+	cookieClaims := jwt.MapClaims{
+		"exp": now.Add(24 * time.Hour).Unix(), // Cookie expires in 24 hours
+		"iat": now.Unix(),
+	}
+
+	cookieToken := jwt.NewWithClaims(jwt.SigningMethodHS256, cookieClaims)
+	signedCookie, err := cookieToken.SignedString([]byte(cookieKey))
+	if err != nil {
+		return fmt.Errorf("signing auth cookie: %w", err)
+	}
+
+	c.authToken = "bearer " + signedToken
+	c.authCookie = &http.Cookie{
+		Name:     "refreshId",
+		Value:    "bearer%20" + signedCookie,
+		HttpOnly: true,
+		Secure:   true,
+	}
+
+	return nil
+}
+
+var idCache = make(map[string]int)
+var idCacheMu sync.RWMutex
+
+func fetchUserID(ctx context.Context, cfg Config, username string) (int, error) {
+	idCacheMu.RLock()
+	if id, ok := idCache[username]; ok {
+		idCacheMu.RUnlock()
+		return id, nil
+	}
+	idCacheMu.RUnlock()
+
+	idCacheMu.Lock()
+	defer idCacheMu.Unlock()
+
+	c, err := New(cfg)
+	if err != nil {
+		return 0, fmt.Errorf("creating admin client: %w", err)
+	}
+
+	c.userID = 1
+	if err := c.LoginWithToken(); err != nil {
+		return 0, fmt.Errorf("login admin client: %w", err)
+	}
+
+	body := `[{
+			"collection": "organization",
+			"ids": [1],
+			"fields": {
+				"user_ids": {
+					"type": "relation-list",
+					"collection": "user",
+					"fields": {
+						"username": null
+					}
+				}
+			}
+		}]`
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		"POST",
+		"/system/autoupdate",
+		strings.NewReader(body),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("creating request: %w", err)
+	}
+
+	resp, err := c.DoRaw(req)
+	if err != nil {
+		return 0, fmt.Errorf("sending get all users request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var respBody map[string]json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&respBody); err != nil {
+		return 0, fmt.Errorf("decoding response: %w", err)
+	}
+
+	for key, value := range respBody {
+		parts := strings.Split(key, "/")
+		if parts[0] != "user" {
+			continue
+		}
+
+		id, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return 0, fmt.Errorf("getting id from key %q: %w", key, err)
+		}
+		var dbUsername string
+		if err := json.Unmarshal(value, &dbUsername); err != nil {
+			return 0, fmt.Errorf("unmarshaling username from %q, %q: %w", key, value, err)
+		}
+		idCache[dbUsername] = id
+	}
+
+	if id, ok := idCache[username]; ok {
+		return id, nil
+	}
+
+	return 0, fmt.Errorf("unknown username %s", username)
+
 }
 
 // decodeUserID returns the user id from a jwt token.

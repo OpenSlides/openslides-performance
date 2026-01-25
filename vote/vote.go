@@ -3,7 +3,6 @@ package vote
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -64,58 +63,6 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 	return nil
 }
 
-func pollData(ctx context.Context, client *client.Client, pollID int) (int, error) {
-	requestBody := fmt.Sprintf(
-		`[{
-			"collection":"poll",
-			"ids":[%d],
-			"fields": {
-				"option_ids": null,
-			}
-		}]`,
-		pollID,
-	)
-	req, err := http.NewRequestWithContext(ctx, "GET", "/system/autoupdate?single=1", strings.NewReader(requestBody))
-	if err != nil {
-		return 0, fmt.Errorf("building request: %w", err)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("getting response: %w", err)
-	}
-	defer resp.Body.Close()
-
-	var data map[string]json.RawMessage
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return 0, fmt.Errorf("decoding response body: %w", err)
-	}
-
-	rawOptionIDs, ok := data[fmt.Sprintf("poll/%d/option_ids", pollID)]
-	if !ok {
-		return 0, fmt.Errorf("option_ids not in response, got %v", dataKeys(data))
-	}
-
-	var optionIDs []int
-	if err := json.Unmarshal(rawOptionIDs, &optionIDs); err != nil {
-		return 0, fmt.Errorf("decoding meeting_id from %q: %w", rawOptionIDs, err)
-	}
-
-	if len(optionIDs) != 1 {
-		return 0, fmt.Errorf("option_ids is %q, expected one value", rawOptionIDs)
-	}
-
-	return optionIDs[0], nil
-}
-
-func dataKeys(m map[string]json.RawMessage) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
 // MassLogin logs in a list of clients.
 func MassLogin(ctx context.Context, clients []*client.Client, basename string, password string) {
 	var wgLogin sync.WaitGroup
@@ -129,7 +76,7 @@ func MassLogin(ctx context.Context, clients []*client.Client, basename string, p
 
 			client := clients[i]
 
-			username := fmt.Sprintf("%s%d", basename, i+1)
+			username := fmt.Sprintf("%s_%d", basename, i+1)
 
 			if err := client.LoginWithCredentials(ctx, username, password); err != nil {
 				log.Printf("Login failed for user %s: %v", username, err)
