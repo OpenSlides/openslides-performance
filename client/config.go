@@ -7,12 +7,14 @@ import (
 
 // Config for all commands.
 type Config struct {
-	Domain   string `help:"Domain of the OpenSlides server to probe." short:"d" default:"localhost:8000"`
-	Username string `help:"Username for logged-in requests." short:"u" default:"superadmin"`
-	Password string `help:"Password to use for logged-in requests." short:"p" default:"superadmin"`
-	HTTP     bool   `help:"Use http instead of https. Default is https."`
-	IPv4     bool   `help:"Force IPv4 for requests." short:"4"`
-	FakeAuth bool   `help:"Do not login but expect user id 1."`
+	Domain     string `help:"Domain of the OpenSlides server to probe." short:"d" default:"localhost:8000"`
+	Username   string `help:"Username for logged-in requests." short:"u" default:"superadmin"`
+	Password   string `help:"Password to use for logged-in requests." short:"p" default:"superadmin"`
+	AuthToken  string `help:"If set, creates tokens instead of login requests."`
+	AuthCookie string `help:"If set, creates tokens instead of login requests."`
+	HTTP       bool   `help:"Use http instead of https. Default is https."`
+	IPv4       bool   `help:"Force IPv4 for requests." short:"4"`
+	FakeAuth   bool   `help:"Do not login but expect user id 1."`
 
 	RetryEventProvider func() <-chan struct{} `kong:"-"`
 }

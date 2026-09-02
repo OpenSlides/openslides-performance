@@ -3,7 +3,6 @@ package vote
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -27,11 +26,6 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 		return fmt.Errorf("login admin: %w", err)
 	}
 
-	optionID, err := pollData(ctx, admin, o.PollID)
-	if err != nil {
-		return fmt.Errorf("getting option id: %w", err)
-	}
-
 	clients := make([]*client.Client, o.Amount)
 	for i := range len(clients) {
 		c, err := client.New(cfg)
@@ -46,6 +40,11 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 	MassLogin(ctx, clients, o.BaseName, o.UsersPassword)
 	log.Printf("All clients logged in %v", time.Now().Sub(start))
 
+	parallel := len(clients)
+	if o.Parallel != 0 {
+		parallel = o.Parallel
+	}
+
 	first := true
 
 	for first || o.Loop {
@@ -59,66 +58,14 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 		}
 
 		start := time.Now()
-		url := "/system/vote"
-		if err := massVotes(clients, url, o.PollID, optionID); err != nil {
+		url := fmt.Sprintf("/system/vote/poll/%d/vote", o.PollID)
+		if err := massVotes(clients, url, parallel); err != nil {
 			return fmt.Errorf("mass vote: %w", err)
 		}
 		log.Printf("All Clients have voted in %v", time.Now().Sub(start))
 	}
 
 	return nil
-}
-
-func pollData(ctx context.Context, client *client.Client, pollID int) (int, error) {
-	requestBody := fmt.Sprintf(
-		`[{
-			"collection":"poll",
-			"ids":[%d],
-			"fields": {
-				"option_ids": null,
-			}
-		}]`,
-		pollID,
-	)
-	req, err := http.NewRequestWithContext(ctx, "GET", "/system/autoupdate?single=1", strings.NewReader(requestBody))
-	if err != nil {
-		return 0, fmt.Errorf("building request: %w", err)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("getting response: %w", err)
-	}
-	defer resp.Body.Close()
-
-	var data map[string]json.RawMessage
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return 0, fmt.Errorf("decoding response body: %w", err)
-	}
-
-	rawOptionIDs, ok := data[fmt.Sprintf("poll/%d/option_ids", pollID)]
-	if !ok {
-		return 0, fmt.Errorf("option_ids not in response, got %v", dataKeys(data))
-	}
-
-	var optionIDs []int
-	if err := json.Unmarshal(rawOptionIDs, &optionIDs); err != nil {
-		return 0, fmt.Errorf("decoding meeting_id from %q: %w", rawOptionIDs, err)
-	}
-
-	if len(optionIDs) != 1 {
-		return 0, fmt.Errorf("option_ids is %q, expected one value", rawOptionIDs)
-	}
-
-	return optionIDs[0], nil
-}
-
-func dataKeys(m map[string]json.RawMessage) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
 }
 
 // MassLogin logs in a list of clients.
@@ -147,22 +94,23 @@ func MassLogin(ctx context.Context, clients []*client.Client, basename string, p
 	progress.Wait()
 }
 
-func massVotes(clients []*client.Client, url string, pollID, optionID int) error {
-	voteValue := fmt.Sprintf(`{"%d": "Y"}`, optionID)
-
-	payload := fmt.Sprintf(`{"value": %s}`, voteValue)
+func massVotes(clients []*client.Client, url string, parallel int) error {
+	payload := `{"value": "yes"}`
 
 	var wgVote sync.WaitGroup
 	progress := mpb.New(mpb.WithWaitGroup(&wgVote))
 	voteBar := progress.AddBar(int64(len(clients)))
+	lock := make(chan struct{}, parallel)
 	for i := range len(clients) {
+		lock <- struct{}{}
 		wgVote.Add(1)
 		go func(i int) {
 			defer wgVote.Done()
 			defer voteBar.Increment()
+			defer func() { <-lock }()
 
 			client := clients[i]
-			req, err := http.NewRequest("POST", fmt.Sprintf("%s?id=%d", url, pollID), strings.NewReader(payload))
+			req, err := http.NewRequest("POST", url, strings.NewReader(payload))
 			if err != nil {
 				log.Printf("Error creating request: %v", err)
 				return

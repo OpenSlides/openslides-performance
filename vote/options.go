@@ -8,6 +8,7 @@ type Options struct {
 	Loop          bool   `help:"After the test, start it again with the logged in users."`
 	BaseName      string `help:"Username, that will be concateenated with an id e.g. dummy1." default:"dummy"`
 	UsersPassword string `help:"The password used for all users" default:"pass"`
+	Parallel      int    `help:"Parallel requests, default is all at the same time"`
 }
 
 // Help returns the help message
@@ -17,5 +18,5 @@ backend. You can use the command "create_users" for this job.
 
 Example:
 
-openslides-performance vote --amount 100 --poll_id 42`
+openslides-performance vote --amount 100 --poll-id 42`
 }

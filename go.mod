@@ -6,6 +6,7 @@ require (
 	github.com/alecthomas/kong v1.12.1
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/eiannone/keyboard v0.0.0-20220611211555-0d226195f203
+	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/uuid v1.6.0
 	github.com/ostcar/topic v0.4.1
 	github.com/vbauerster/mpb/v7 v7.5.3
