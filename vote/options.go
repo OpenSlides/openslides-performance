@@ -18,5 +18,5 @@ backend. You can use the command "create_users" for this job.
 
 Example:
 
-openslides-performance vote --amount 100 --poll_id 42`
+openslides-performance vote --amount 100 --poll-id 42`
 }

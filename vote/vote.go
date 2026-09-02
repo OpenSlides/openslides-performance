@@ -58,8 +58,8 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 		}
 
 		start := time.Now()
-		url := "/system/vote"
-		if err := massVotes(clients, url, o.PollID, parallel); err != nil {
+		url := fmt.Sprintf("/system/vote/poll/%d/vote", o.PollID)
+		if err := massVotes(clients, url, parallel); err != nil {
 			return fmt.Errorf("mass vote: %w", err)
 		}
 		log.Printf("All Clients have voted in %v", time.Now().Sub(start))
@@ -81,7 +81,7 @@ func MassLogin(ctx context.Context, clients []*client.Client, basename string, p
 
 			client := clients[i]
 
-			username := fmt.Sprintf("%s_%d", basename, i+1)
+			username := fmt.Sprintf("%s%d", basename, i+1)
 
 			if err := client.LoginWithCredentials(ctx, username, password); err != nil {
 				log.Printf("Login failed for user %s: %v", username, err)
@@ -94,7 +94,7 @@ func MassLogin(ctx context.Context, clients []*client.Client, basename string, p
 	progress.Wait()
 }
 
-func massVotes(clients []*client.Client, url string, pollID int, parallel int) error {
+func massVotes(clients []*client.Client, url string, parallel int) error {
 	payload := `{"value": "yes"}`
 
 	var wgVote sync.WaitGroup
@@ -110,7 +110,7 @@ func massVotes(clients []*client.Client, url string, pollID int, parallel int) e
 			defer func() { <-lock }()
 
 			client := clients[i]
-			req, err := http.NewRequest("POST", fmt.Sprintf("%s?id=%d", url, pollID), strings.NewReader(payload))
+			req, err := http.NewRequest("POST", url, strings.NewReader(payload))
 			if err != nil {
 				log.Printf("Error creating request: %v", err)
 				return

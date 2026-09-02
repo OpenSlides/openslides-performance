@@ -66,11 +66,11 @@ func (o Options) Run(ctx context.Context, cfg client.Config) error {
 				userID := b*(o.Batch) + i + o.FirstID
 				user := fmt.Sprintf(
 					`{
-							"username": "%s%d",
-							"default_password": "%s",
-							%s
-							"is_active":true
-						}`,
+						"username": "%s%d",
+						"default_password": "%s",
+						%s
+						"is_active":true
+					}`,
 					o.BaseName,
 					userID,
 					o.UsersPassword,
